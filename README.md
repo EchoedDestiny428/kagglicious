@@ -1,2 +1,2 @@
-# kaggilicious
+# kagglicious
 Kaggle Journey
