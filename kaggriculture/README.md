@@ -6,7 +6,7 @@ score is the cash you end with; the ladder rates agents by Elo.
 
 - Team: **lost**
 - Our agent: **crimson** (`crimson_vN.py`)
-- Best ladder score so far: **2814** (crimson_v2); crimson_v2.1 is at **2800** and still settling.
+- Best ladder score so far: **2826** (crimson_v2.1); **crimson_v3** was submitted 2026-09-18 and is still validating.
 
 The agent code and test tools will be added here after the competition ends.
 
@@ -17,7 +17,8 @@ The agent code and test tools will be added here after the competition ends.
 | main.py (v9) | hand-tuned heuristic | - | 625 |
 | crimson_v1 | V46 base, sale lookahead 3 -> 16 turns | 661-59 vs the public panel | 2750 |
 | crimson_v2 | v1 + turn-1 wheat buy 30 -> 15 units | 870-26 (97.1%), 59-5 vs v1 | 2814 |
-| crimson_v2.1 | v2 + same-turn sale order | 346-38 (90.1%), 31-1 vs v2 | 2800 (settling) |
+| crimson_v2.1 | v2 + same-turn sale order | 346-38 (90.1%), 31-1 vs v2 | 2826 |
+| crimson_v3 | v2.1 + day-6 route table for 19 shop pairs | 206-22 vs v2.1 on the changed pairs (+$2,020/game) | submitted 2026-09-18 |
 
 Details: [results/ladder_scores.md](results/ladder_scores.md), raw ladder log in
 [results/ladder_history.log](results/ladder_history.log).
@@ -58,6 +59,8 @@ See [findings.md](findings.md) for the full list. Highlights:
   earlier tomato investment, filling the fourth land quadrant with carrots.
 - One close ladder loss came from a full order list: nine morning hires left no slot for a valuable wool
   sale, which then sold one turn late for $95 instead of $533.
+- The plan the agent follows from day 6 is chosen from only the first two of eight town shops. Testing every
+  recorded plan for every pair of first shops found better choices for 19 of the 64 pairs (v3).
 
 ## Credits
 
