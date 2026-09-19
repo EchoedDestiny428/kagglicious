@@ -1,6 +1,6 @@
 # Ladder scores
 
-Kaggle public ladder (Elo; new submissions start at 600). Snapshot 2026-09-18.
+Kaggle public ladder (Elo; new submissions start at 600). Snapshot 2026-09-19.
 
 | Submission | File | Submitted (UTC) | Description | Peak Elo | Elo now |
 |---|---|---|---|---|---|
@@ -9,7 +9,9 @@ Kaggle public ladder (Elo; new submissions start at 600). Snapshot 2026-09-18.
 | 56293351 | crimson_v1.py | 2026-09-17 03:31 | sale lookahead 16 | 2750 | 2750 |
 | 56295589 | crimson_v2.py | 2026-09-17 05:12 | sale lookahead 16, turn-1 wheat buy 30->15 | 2862 | 2814 |
 | 56303867 | crimson_v2.1.py | 2026-09-17 11:58 | v2 + same-turn sale order fix | 2826 | 2826 |
-| 56317029 | crimson_v3.py | 2026-09-18 | v2.1 + day-6 route table | - | validating |
+| 56317029 | crimson_v3.py | 2026-09-18 | v2.1 + day-6 route table | ~2798 | 2747 |
+| 56326472 | crimson_v3.1.py | 2026-09-18 | v3 + 7 more route-table pairs | - | 2552 |
+| 56351518 | crimson_v3.2.py | 2026-09-19 | v3.1 + 6 more shop routes | - | validating |
 
 Leaderboard context (2026-09-17): #1 at ~3185, #10 at ~3034, #20 at ~2946. On 2026-09-13 there were 8,879
 teams, 679 of them at 2500+.
