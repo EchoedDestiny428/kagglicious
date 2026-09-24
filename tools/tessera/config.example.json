@@ -1,0 +1,21 @@
+{
+  "claude": {
+    "command": "claude",
+    "args": [],
+    "resumeOnRestore": true,
+    "orchestration": true
+  },
+  "shell": { "command": "", "args": [] },
+  "terminal": {
+    "fontSize": 13,
+    "scrollback": 10000,
+    "fontFamily": ""
+  },
+  "jobs": {
+    "host": "your-ssh-alias",
+    "command": "python3 ~/jobs_status.py",
+    "intervalSeconds": 30,
+    "sshCommand": "ssh",
+    "sshArgs": []
+  }
+}

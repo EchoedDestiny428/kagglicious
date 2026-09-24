@@ -1,0 +1,4 @@
+#!/bin/sh
+# Runs the tessera CLI with the runtime of the Tessera window that started this shell.
+# Git Bash on Windows must not rewrite arguments like "/compact" into paths.
+MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL="*" ELECTRON_RUN_AS_NODE=1 exec "$TESSERA_NODE" "$TESSERA_CLI" "$@"
