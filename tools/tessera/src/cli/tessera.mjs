@@ -9,12 +9,12 @@ const HELP = `Usage: tessera <command>
   list                          The orchestrator and agents, with state (working / idle / exited)
   send <pane> <text>            Type text into a pane and press Enter ("-" reads stdin)
   read <pane> [--lines N]       Last N lines of a pane's screen (default 60)
-  wait <pane> [--idle S] [--timeout S]
-                                Wait until a pane has been quiet for S seconds (default 3);
+  wait <pane>... [--idle S] [--timeout S]
+                                Wait until the panes have been quiet for S seconds (default 3);
                                 gives up after --timeout seconds (default 100, exit code 2)
   open [folder]                 Start an agent in a folder (default: this folder)
 
-Panes are numbered as in "tessera list". Typical use: send a task, wait, then read.`;
+Panes are numbered as in "tessera list". Typical use: send tasks to agents, wait for them, then read.`;
 
 const env = process.env;
 const self = env.TESSERA_PANE ?? null;
@@ -101,13 +101,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const commands = {
   async list() {
-    const panes = await request('list');
+    const { panes, checkIns } = await request('list');
     if (!panes.length) return console.log('No panes open.');
     console.log(`${pad('pane', 6)}${pad('state', 10)}${pad('folder', 30)}title`);
     for (const p of panes) {
       const you = p.id === self ? '   <- you' : '';
       const name = p.role === 'orchestrator' ? `${p.name} (orchestrator)` : p.name;
       console.log(`${pad(p.id, 6)}${pad(p.state, 10)}${pad(name, 30)}${p.title}${you}`);
+    }
+    if (checkIns) {
+      console.log(`\nCheck-ins are on: Tessera messages the orchestrator when an agent it gave a task to stops, ` +
+        `and every ${checkIns} min while one works. No need to block on "wait" for long tasks.`);
     }
   },
 
@@ -132,19 +136,22 @@ const commands = {
 
   async wait(argv) {
     const { rest, opts } = options(argv, ['idle', 'timeout']);
-    const id = paneArg(rest[0]);
-    if (id === self) fail('cannot wait for this pane.');
+    if (!rest.length) fail('give one or more pane numbers.');
+    const ids = [...new Set(rest.map(paneArg))];
+    if (ids.includes(self)) fail('cannot wait for this pane.');
     const idle = number(opts.idle, 3, 'idle');
     const timeout = number(opts.timeout, 100, 'timeout');
     const until = Date.now() + timeout * 1000;
+    const quiet = (p) => p.state !== 'working' && p.state !== 'starting' && p.idle >= idle;
     for (;;) {
-      const pane = (await request('list')).find((p) => p.id === id);
-      if (!pane) fail(`pane ${id} is not open.`);
-      if (pane.state !== 'working' && pane.state !== 'starting' && pane.idle >= idle) {
-        return console.log(`Pane ${id} is ${pane.state}.`);
+      const { panes } = await request('list');
+      const watched = ids.map((id) => panes.find((p) => p.id === id) ?? fail(`pane ${id} is not open.`));
+      if (watched.every(quiet)) {
+        for (const p of watched) console.log(`Pane ${p.id} is ${p.state}.`);
+        return;
       }
       if (Date.now() > until) {
-        console.log(`Pane ${id} is still working after ${timeout}s.`);
+        for (const p of watched) console.log(`Pane ${p.id} is ${quiet(p) ? p.state : 'still working'}.`);
         process.exit(2);
       }
       await sleep(1000);

@@ -9,7 +9,9 @@ export const DEFAULTS = Object.freeze({
   folder: null, // the open folder
   recent: [], // recently opened folders, newest first
   sessions: {}, // folder key -> { orchestrator, agents } saved for that folder
-  claude: { command: 'claude', args: [], resumeOnRestore: true, orchestration: true },
+  // model / effort / permissionMode: '' leaves Claude Code's own default.
+  claude: { command: 'claude', args: [], model: '', effort: '', permissionMode: '', resumeOnRestore: true, orchestration: true },
+  orchestrator: { checkIns: false, checkInterval: 5 }, // minutes between progress check-ins
   shell: { command: '', args: [] }, // terminal in the zoomed view; empty = platform default
   terminal: { fontSize: 13, scrollback: 10000, fontFamily: '' },
   ui: { theme: null, orchestratorWidth: 460, confirmClose: true, confirmQuit: true },
@@ -18,6 +20,10 @@ export const DEFAULTS = Object.freeze({
 });
 
 export const MAX_RECENT = 10;
+export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+// Modes that skip permission checks entirely are left to claude.args on purpose.
+export const PERMISSION_MODES = ['auto', 'acceptEdits', 'plan', 'manual'];
+const MODEL_RE = /^[A-Za-z0-9._\-[\]]{1,64}$/; // an alias like "opus" or a full name like "opus[1m]"
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const str = (v, fallback, max = 4096) => (typeof v === 'string' && v.length <= max ? v : fallback);
@@ -68,6 +74,7 @@ export function sanitize(raw, platform = process.platform) {
   const warnings = [];
   const pick = (key) => (isObj(src[key]) ? src[key] : {});
   const claude = pick('claude');
+  const orchestrator = pick('orchestrator');
   const shell = pick('shell');
   const terminal = pick('terminal');
   const ui = pick('ui');
@@ -101,8 +108,16 @@ export function sanitize(raw, platform = process.platform) {
         ...claude,
         command: str(claude.command, DEFAULTS.claude.command).trim() || DEFAULTS.claude.command,
         args: strList(claude.args),
+        model: typeof claude.model === 'string' && MODEL_RE.test(claude.model) ? claude.model : '',
+        effort: EFFORTS.includes(claude.effort) ? claude.effort : '',
+        permissionMode: PERMISSION_MODES.includes(claude.permissionMode) ? claude.permissionMode : '',
         resumeOnRestore: bool(claude.resumeOnRestore, DEFAULTS.claude.resumeOnRestore),
         orchestration: bool(claude.orchestration, DEFAULTS.claude.orchestration),
+      },
+      orchestrator: {
+        ...orchestrator,
+        checkIns: bool(orchestrator.checkIns, false),
+        checkInterval: int(orchestrator.checkInterval, DEFAULTS.orchestrator.checkInterval, 1, 60),
       },
       shell: { ...shell, command: str(shell.command, '').trim(), args: strList(shell.args) },
       terminal: {

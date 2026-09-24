@@ -2,8 +2,15 @@
   "claude": {
     "command": "claude",
     "args": [],
+    "model": "",
+    "effort": "",
+    "permissionMode": "",
     "resumeOnRestore": true,
     "orchestration": true
+  },
+  "orchestrator": {
+    "checkIns": false,
+    "checkInterval": 5
   },
   "shell": { "command": "", "args": [] },
   "terminal": {

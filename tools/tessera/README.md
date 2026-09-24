@@ -28,6 +28,9 @@ npm test       # unit tests (node:test)
   Close with × in the top right.
 - Tessera saves each folder's orchestrator and agents. Next launch it reopens the last folder, and every
   session resumes its own conversation.
+- **Settings** (gear, top right): model, effort and permission mode for every Claude session, the
+  check-in interval, and font size. Model, effort and permissions apply to sessions started (or
+  resumed) afterwards.
 - Drag the sidebar's left edge to resize it. Day / night switch in the top right.
 
 Shortcuts (Cmd instead of Ctrl on macOS):
@@ -64,6 +67,12 @@ tessera open [folder]             start an agent (default: this folder)
 The command talks to the app over a named pipe (a user-only socket on macOS/Linux) with a random
 token. Both exist only for processes started inside Tessera. To leave the orchestrator's prompt hint
 out, set `claude.orchestration` to `false`.
+
+**Check-ins** (the switch in the orchestrator's header): Tessera keeps track of every task the
+orchestrator hands to an agent. It messages the orchestrator (`[tessera] Check-in: ...`) when that agent
+stops, whether it finished or is waiting for input, and every few minutes while it keeps working. The
+orchestrator then reviews the work and follows up without being asked. Check-ins are only sent while
+the orchestrator is idle and you are not in the middle of typing to it.
 
 ## Configuration
 

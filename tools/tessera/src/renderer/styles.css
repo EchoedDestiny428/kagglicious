@@ -782,6 +782,186 @@ body.resizing .xterm {
   pointer-events: none;
 }
 
+/* --------------------------------------------------------------- settings */
+
+.topbar-btn {
+  width: 30px;
+  height: 30px;
+}
+
+.settings {
+  position: fixed;
+  z-index: 40;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  animation: pop 0.14s var(--ease);
+}
+
+.settings-row {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 4px 0 8px;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+
+.select {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.select-input {
+  height: 30px;
+  min-width: 142px;
+  padding: 0 28px 0 10px;
+  appearance: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+  color: var(--text);
+  font: 500 12.5px var(--font-ui);
+  cursor: pointer;
+}
+
+.select-input:hover {
+  border-color: var(--focus-border);
+}
+
+.select-input:focus-visible {
+  outline: none;
+  border-color: var(--text);
+}
+
+.select .icon {
+  position: absolute;
+  right: 9px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 30px;
+  padding: 0 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+}
+
+.stepper .icon-btn {
+  width: 26px;
+  height: 24px;
+}
+
+.stepper-value {
+  min-width: 28px;
+  color: var(--text);
+  font: 500 12.5px var(--font-mono);
+  text-align: center;
+}
+
+.settings-note {
+  margin: 6px 8px 2px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.settings-link {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+  padding: 0 8px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.settings-link:hover {
+  color: var(--text);
+}
+
+/* Check-ins switch in the orchestrator's header: label + track with a knob.
+   Off: hollow grey track, knob left, dim label. On: solid track, knob right. */
+.switch-toggle {
+  height: 26px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-3);
+  font: 500 12px var(--font-ui);
+  cursor: pointer;
+  transition: color 0.2s var(--ease), background 0.2s var(--ease);
+}
+
+.switch-toggle:hover {
+  background: var(--hover);
+  color: var(--text-2);
+}
+
+.switch {
+  position: relative;
+  width: 30px;
+  height: 18px;
+  flex: none;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1.5px var(--border-strong);
+  transition: background 0.2s var(--ease), box-shadow 0.2s var(--ease);
+}
+
+.switch-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-3);
+  transition: transform 0.22s var(--ease), background 0.2s var(--ease);
+}
+
+.switch-toggle[aria-checked='true'] {
+  color: var(--text);
+}
+
+.switch-toggle[aria-checked='true'] .switch {
+  background: var(--text);
+  box-shadow: inset 0 0 0 1.5px var(--text);
+}
+
+.switch-toggle[aria-checked='true'] .switch-knob {
+  transform: translateX(12px);
+  background: var(--surface);
+}
+
+.side-head {
+  padding-right: 8px;
+}
+
 /* ------------------------------------------------------------ jobs strip */
 
 #jobs {

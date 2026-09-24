@@ -2,8 +2,10 @@ import '@fontsource-variable/geist';
 import '@fontsource-variable/geist-mono';
 import '@xterm/xterm/css/xterm.css';
 import './styles.css';
+import { checkInMessage, TaskWatch } from './checkins.js';
 import { basename, h, icon, iconButton, pathKey } from './dom.js';
 import { JobsStrip } from './jobs-strip.js';
+import { openSettings } from './settings.js';
 import { TerminalPane } from './terminal-pane.js';
 import { gridShape, readSaved } from './tiles.js';
 import { ZoomView } from './zoom.js';
@@ -23,6 +25,8 @@ const state = {
   agents: [], // [{ pane, tile, slot }] in the order they were opened
   ui: {},
   terminal: { fontSize: 13, scrollback: 10000, fontFamily: '' },
+  claude: { model: '', effort: '', permissionMode: '' },
+  orchestratorPrefs: { checkIns: false, checkInterval: 5 },
   theme: api.initialTheme,
   windowsBuild: 0,
   configError: null,
@@ -50,7 +54,8 @@ const folderBtn = h('button', { class: 'folder-btn', type: 'button', onClick: ()
   icon('folder', 15), folderName, icon('chevron', 14));
 const themeToggle = h('button', { class: 'theme-toggle', type: 'button', role: 'switch', onClick: () => toggleTheme() },
   h('span', { class: 'theme-knob' }), withClass(icon('sun', 13), 'sun'), withClass(icon('moon', 13), 'moon'));
-els.topbar.append(folderBtn, h('div', { class: 'spacer' }), themeToggle);
+const settingsBtn = iconButton('settings', 'Settings', (e) => showSettings(e.currentTarget), 'topbar-btn');
+els.topbar.append(folderBtn, h('div', { class: 'spacer' }), settingsBtn, themeToggle);
 
 // Start panel: open one subfolder, or all of them. Sits after the tiles.
 const pickBtn = h('button', { class: 'btn primary start-btn', type: 'button', onClick: (e) => subfolderPicker(e.currentTarget) },
@@ -65,7 +70,9 @@ new ResizeObserver(() => layoutGrid()).observe(els.agents);
 
 // Orchestrator sidebar.
 const orchTitle = h('span', { class: 'side-title' });
-const orchHead = h('header', { class: 'side-head' }, icon('network', 15), h('span', { class: 'side-name', text: 'Orchestrator' }), orchTitle);
+const checkInsBtn = h('button', { class: 'switch-toggle', type: 'button', role: 'switch', 'aria-checked': 'false', onClick: () => setCheckIns(!state.orchestratorPrefs.checkIns) },
+  h('span', { text: 'Check-ins' }), h('span', { class: 'switch' }, h('span', { class: 'switch-knob' })));
+const orchHead = h('header', { class: 'side-head' }, icon('network', 15), h('span', { class: 'side-name', text: 'Orchestrator' }), orchTitle, checkInsBtn);
 const orchSlot = h('div', { class: 'side-slot' });
 const resizer = h('div', { class: 'side-resizer' });
 els.side.append(resizer, h('div', { class: 'side-card' }, orchHead, orchSlot));
@@ -108,6 +115,9 @@ function applyState(s) {
     if (s.configError) toast(s.configError, { sticky: true });
   }
   if (s.jobs) jobs.update(s.jobs);
+  if (s.claude) state.claude = s.claude;
+  if (s.orchestrator) state.orchestratorPrefs = s.orchestrator;
+  renderCheckIns();
 }
 
 function settings() {
@@ -516,6 +526,76 @@ function toast(message, { sticky = false } = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Settings
+
+function showSettings(anchor) {
+  openSettings(anchor, {
+    ...state.claude,
+    checkInterval: state.orchestratorPrefs.checkInterval,
+    fontSize: state.terminal.fontSize,
+  }, {
+    onChange: async (patch) => {
+      if ('fontSize' in patch) {
+        changeFontSize(patch.fontSize - state.terminal.fontSize);
+        return;
+      }
+      applyState(await api.setPrefs(patch));
+    },
+    onOpenConfig: async () => {
+      const err = await api.openConfig();
+      if (err) toast(err);
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Check-ins: Tessera tells the orchestrator how the tasks it handed out are going
+
+const watch = new TaskWatch();
+const pendingCheckIns = new Map(); // agent id -> latest event
+const fromOrchestrator = (from) => Boolean(from) && state.orchestrator?.id === String(from);
+
+async function setCheckIns(on) {
+  state.orchestratorPrefs = { ...state.orchestratorPrefs, checkIns: on };
+  renderCheckIns();
+  applyState(await api.setPrefs({ checkIns: on }));
+}
+
+function renderCheckIns() {
+  const on = state.orchestratorPrefs.checkIns;
+  checkInsBtn.setAttribute('aria-checked', String(on));
+  checkInsBtn.title = on
+    ? `Tessera reports to the orchestrator when an agent stops, and every ${state.orchestratorPrefs.checkInterval} min while one works`
+    : 'Have Tessera report agent progress to the orchestrator';
+}
+
+function tickCheckIns() {
+  const now = Date.now();
+  const agents = state.agents.map(({ pane }) => ({
+    id: pane.id,
+    name: pane.label,
+    state: pane.controlState,
+    idleMs: pane.idleSeconds * 1000,
+    lastOutputAt: pane.lastOutputAt,
+  }));
+  const events = watch.check(agents, now, state.orchestratorPrefs.checkInterval * 60000);
+  if (!state.orchestratorPrefs.checkIns) {
+    pendingCheckIns.clear();
+    return;
+  }
+  for (const e of events) pendingCheckIns.set(e.id, e);
+  const orch = state.orchestrator;
+  // Only when the orchestrator is free and the user is not typing to it.
+  if (!pendingCheckIns.size || !orch || orch.status !== 'running') return;
+  if (orch.controlState !== 'idle' || orch.idleSeconds < 3 || orch.userTyping) return;
+  const message = checkInMessage([...pendingCheckIns.values()]);
+  pendingCheckIns.clear();
+  orch.sendText(message).catch(() => {});
+}
+
+setInterval(tickCheckIns, 2000);
+
+// ---------------------------------------------------------------------------
 // Keyboard
 
 window.addEventListener('keydown', (e) => {
@@ -561,15 +641,30 @@ function controlPane(id) {
 }
 
 const control = {
-  list: () => allPanes().map((p) => ({
-    id: p.id, name: p.role === 'orchestrator' ? basename(p.cwd) : p.label, role: p.role, cwd: p.cwd,
-    state: p.controlState, idle: p.idleSeconds, title: p.title,
-  })),
-  send: async ({ id, text }) => {
-    await controlPane(id).sendText(String(text));
+  list: () => ({
+    panes: allPanes().map((p) => ({
+      id: p.id, name: p.role === 'orchestrator' ? basename(p.cwd) : p.label, role: p.role, cwd: p.cwd,
+      state: p.controlState, idle: p.idleSeconds, title: p.title,
+    })),
+    checkIns: state.orchestratorPrefs.checkIns ? state.orchestratorPrefs.checkInterval : 0,
+  }),
+  send: async ({ id, text }, from) => {
+    const pane = controlPane(id);
+    await pane.sendText(String(text));
+    if (fromOrchestrator(from) && pane.role === 'agent') {
+      watch.started(pane.id, Date.now());
+      pendingCheckIns.delete(pane.id);
+    }
     return true;
   },
-  read: ({ id, lines }) => controlPane(id).readText(Math.min(2000, Math.max(1, Number(lines) || 60))),
+  read: ({ id, lines }, from) => {
+    const pane = controlPane(id);
+    if (fromOrchestrator(from)) {
+      watch.looked(pane.id, pane.controlState !== 'working', Date.now());
+      pendingCheckIns.delete(pane.id);
+    }
+    return pane.readText(Math.min(2000, Math.max(1, Number(lines) || 60)));
+  },
   open: ({ cwd }) => {
     if (!state.folder) throw new Error('No folder is open.');
     const existing = state.agents.find((a) => key(a.pane.cwd) === key(cwd));
@@ -577,10 +672,10 @@ const control = {
   },
 };
 
-api.control.onRequest(async (reqId, cmd, args) => {
+api.control.onRequest(async (reqId, cmd, args, from) => {
   try {
     if (!Object.hasOwn(control, cmd)) throw new Error(`Unknown command "${cmd}".`);
-    api.control.reply(reqId, null, await control[cmd](args ?? {}));
+    api.control.reply(reqId, null, await control[cmd](args ?? {}, from));
   } catch (err) {
     api.control.reply(reqId, err.message, null);
   }

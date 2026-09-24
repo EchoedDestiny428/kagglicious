@@ -158,6 +158,11 @@ export class TerminalPane {
     if (e.type !== 'keydown') return true;
     const key = e.key.toLowerCase();
     const ctrlOnly = e.ctrlKey && !e.altKey && !e.metaKey;
+    // Remember whether the user has a message half-typed (Enter sends it,
+    // Ctrl+C clears it), so Tessera never types into the middle of it.
+    this.lastKeyAt = Date.now();
+    if ((key === 'enter' && !e.shiftKey) || (ctrlOnly && key === 'c' && !this.term.hasSelection())) this.draft = false;
+    else if (e.key.length === 1 || key === 'backspace' || (ctrlOnly && key === 'v')) this.draft = true;
     if (!IS_MAC && ctrlOnly && key === 'c') {
       // Ctrl+C copies when there is a selection (and always with Shift);
       // otherwise it is an interrupt for the process.
@@ -381,6 +386,11 @@ export class TerminalPane {
   get controlState() {
     if (this.status !== 'running') return this.status;
     return Date.now() - this.lastOutputAt < BUSY_MS ? 'working' : 'idle';
+  }
+
+  // The user is in the middle of typing a message (recently, and not sent yet).
+  get userTyping() {
+    return Boolean(this.draft) && Date.now() - (this.lastKeyAt ?? 0) < 30000;
   }
 
   get idleSeconds() {

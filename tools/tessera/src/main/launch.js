@@ -126,27 +126,43 @@ export function defaultShell(env, platform = process.platform) {
 export const ORCHESTRATION_HINT =
   'You are the orchestrator in Tessera. Other Claude Code sessions ("agents") run in subfolders of this ' +
   'folder and are shown next to you. When the user asks you to delegate to, coordinate, check on, or start ' +
-  'agents, use the `tessera` shell command (run `tessera help` first).';
+  'agents, use the `tessera` shell command (run `tessera help` first). Messages that start with [tessera] are ' +
+  'check-ins sent by Tessera, not by the user: they report on agents you gave tasks to. When one arrives, look ' +
+  'at those agents (`tessera read`), follow up or fix problems (`tessera send`), and tell the user once the ' +
+  'work is done.';
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Flags we manage ourselves; drop them from user args so they never conflict.
-const SESSION_FLAGS = new Set(['--session-id', '--resume', '-r', '--continue', '-c', '--fork-session']);
-export function stripSessionFlags(args) {
+// Remove flags (and the value after them, unless written flag=value) from an
+// argument list. `valued` lists the flags that take a value.
+export function stripFlags(args, flags, valued = flags) {
   const out = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     const [flag] = a.split('=');
-    if (!SESSION_FLAGS.has(flag)) {
+    if (!flags.includes(flag)) {
       out.push(a);
       continue;
     }
-    // Skip a following value for flags that take one (unless given as flag=value).
-    if ((flag === '--session-id' || flag === '--resume' || flag === '-r') && !a.includes('=')) {
+    if (valued.includes(flag) && !a.includes('=')) {
       const next = args[i + 1];
       if (next !== undefined && !next.startsWith('-')) i++;
     }
   }
+  return out;
+}
+
+// Session flags are always ours; drop them from user args so they never conflict.
+export const stripSessionFlags = (args) =>
+  stripFlags(args, ['--session-id', '--resume', '-r', '--continue', '-c', '--fork-session'], ['--session-id', '--resume', '-r']);
+
+// Model, effort and permission mode chosen in Settings, as claude flags.
+// A setting replaces the same flag in claude.args; an empty one leaves them.
+export function settingFlags(claude, args) {
+  const pairs = [['--model', claude.model], ['--effort', claude.effort], ['--permission-mode', claude.permissionMode]];
+  const set = pairs.filter(([, value]) => value);
+  const out = stripFlags(args, set.map(([flag]) => flag));
+  for (const [flag, value] of set) out.push(flag, value);
   return out;
 }
 
@@ -163,7 +179,7 @@ export function buildCommand({ role, session }, config, env, platform = process.
     args = shell.args.slice();
   } else {
     command = config.claude.command;
-    args = stripSessionFlags(config.claude.args);
+    args = settingFlags(config.claude, stripSessionFlags(config.claude.args));
     if (session && UUID_RE.test(session.id)) args.push(session.resume ? '--resume' : '--session-id', session.id);
     if (role === 'orchestrator' && config.claude.orchestration && !args.some((a) => a.startsWith('--append-system-prompt'))) {
       args.push('--append-system-prompt', ORCHESTRATION_HINT);

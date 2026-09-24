@@ -273,6 +273,8 @@ function publicState() {
     recent: c.recent.map((p) => ({ path: p, exists: isDir(p) })),
     terminal: c.terminal,
     ui: c.ui,
+    claude: { model: c.claude.model, effort: c.claude.effort, permissionMode: c.claude.permissionMode },
+    orchestrator: c.orchestrator,
     jobs: poller.state,
   };
 }
@@ -421,7 +423,15 @@ function registerIpc() {
       if ('confirmClose' in patch) c.ui.confirmClose = patch.confirmClose;
       if ('orchestratorWidth' in patch) c.ui.orchestratorWidth = patch.orchestratorWidth;
       if ('fontSize' in patch) c.terminal.fontSize = patch.fontSize;
+      for (const k of ['model', 'effort', 'permissionMode']) if (k in patch) c.claude[k] = patch[k];
+      if ('checkIns' in patch) c.orchestrator.checkIns = patch.checkIns;
+      if ('checkInterval' in patch) c.orchestrator.checkInterval = patch.checkInterval;
     });
+    return publicState();
+  });
+  handle('config:open', async () => {
+    if (!fs.existsSync(store.file)) store.flush();
+    return (await shell.openPath(store.file)) || null;
   });
   handle('theme:set', (theme) => {
     if (theme !== 'dark' && theme !== 'light') return currentTheme();
@@ -543,7 +553,7 @@ ipcMain.on('control:reply', (e, id, error, result) => {
   else waiting.resolve(result);
 });
 
-function handleControl(cmd, args) {
+function handleControl(cmd, args, from) {
   if (!CONTROL_COMMANDS.has(cmd)) throw new Error(`Unknown command "${cmd}".`);
   if (!args || typeof args !== 'object') throw new Error('Bad arguments.');
   if (cmd === 'open') {
@@ -559,6 +569,7 @@ function handleControl(cmd, args) {
       reject(new Error('The Tessera window did not answer.'));
     }, 10000);
     controlWaiting.set(id, { resolve, reject, timer });
-    send('control:request', id, cmd, args);
+    // Which pane asked, so the page can tell the orchestrator's requests apart.
+    send('control:request', id, cmd, args, typeof from === 'string' && /^\d{1,6}$/.test(from) ? from : null);
   });
 }
