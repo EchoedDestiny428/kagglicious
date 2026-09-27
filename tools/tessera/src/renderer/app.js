@@ -21,6 +21,7 @@ const state = {
   folder: null, // the open folder
   recent: [], // [{ path, exists }], newest first
   subfolders: [], // subfolders of the open folder
+  sync: { enabled: false }, // open folder's repo vs GitHub (repos with sync.sh only)
   orchestrator: null, // TerminalPane running claude in the folder itself
   agents: [], // [{ pane, tile, slot }] in the order they were opened
   ui: {},
@@ -50,8 +51,9 @@ const els = {
 };
 
 const folderName = h('span', { class: 'folder-name' });
+const syncDot = h('span', { class: 'sync-dot', hidden: true });
 const folderBtn = h('button', { class: 'folder-btn', type: 'button', onClick: () => folderMenu() },
-  icon('folder', 15), folderName, icon('chevron', 14));
+  icon('folder', 15), folderName, syncDot, icon('chevron', 14));
 const themeToggle = h('button', { class: 'theme-toggle', type: 'button', role: 'switch', onClick: () => toggleTheme() },
   h('span', { class: 'theme-knob' }), withClass(icon('sun', 13), 'sun'), withClass(icon('moon', 13), 'moon'));
 const settingsBtn = iconButton('settings', 'Settings', (e) => showSettings(e.currentTarget), 'topbar-btn');
@@ -157,7 +159,9 @@ function labelFor(cwd) {
 function render() {
   const hasFolder = Boolean(state.folder);
   folderName.textContent = hasFolder ? basename(state.folder) : '';
-  folderBtn.title = state.folder ?? '';
+  const unsynced = state.sync.enabled && state.sync.unsynced;
+  syncDot.hidden = !unsynced;
+  folderBtn.title = state.folder ? `${state.folder}${unsynced ? '\nNot synced with GitHub' : ''}` : '';
   folderBtn.hidden = !hasFolder;
   noFolder.hidden = hasFolder;
   els.agents.hidden = !hasFolder;
@@ -183,17 +187,39 @@ function layoutGrid() {
 async function folderMenu() {
   state.recent = (await api.folder.recent()) ?? state.recent;
   const others = state.recent.filter((r) => !state.folder || key(r.path) !== key(state.folder));
-  if (!others.length) {
+  const canSync = state.sync.enabled && state.sync.unsynced && !state.sync.running;
+  if (!others.length && !canSync) {
     pickFolder();
     return;
   }
   const choice = await api.menu([
+    ...(canSync ? [{ id: 'sync', label: 'Sync now' }, { type: 'separator' }] : []),
     ...others.map((r, i) => ({ id: String(i), label: r.path, enabled: r.exists })),
-    { type: 'separator' },
+    ...(others.length ? [{ type: 'separator' }] : []),
     { id: 'pick', label: 'Open folder…' },
   ]);
-  if (choice === 'pick') pickFolder();
+  if (choice === 'sync') syncNow();
+  else if (choice === 'pick') pickFolder();
   else if (choice !== null) openFolder(others[Number(choice)].path);
+}
+
+// Run the repo's sync.sh (commit, pull, push). Pulling can change files under
+// a session that is working, so ask first in that case.
+async function syncNow() {
+  const working = allPanes().filter((p) => p.controlState === 'working').length;
+  if (working) {
+    const { confirmed } = await api.confirm({
+      message: 'Sync now?',
+      detail: `${working} session${working === 1 ? ' is' : 's are'} working. Pulling can change files while they edit.`,
+      confirm: 'Sync',
+    });
+    if (!confirmed) return;
+  }
+  toast('Syncing…');
+  const { ok, output } = await api.sync.run();
+  const lines = String(output).split('\n').filter(Boolean);
+  if (ok) toast(lines.at(-1) ?? 'Synced.');
+  else toast(output, { sticky: true });
 }
 
 async function pickFolder() {
@@ -774,6 +800,10 @@ api.pty.onExit((ptyId, code) => paneForPty(ptyId)?.handleExit(code));
 api.onConfigChanged((s) => applyState(s));
 api.onToast((msg) => toast(msg));
 api.onFocus(() => refreshSubfolders());
+api.sync.onState((s) => {
+  state.sync = s ?? { enabled: false };
+  render();
+});
 api.onNotifyClick((paneId) => {
   const pane = allPanes().find((p) => p.id === paneId);
   if (!pane) return;

@@ -7,6 +7,7 @@ import path from 'node:path';
 import { ConfigStore, folderKey } from './config.js';
 import { ControlServer } from './control.js';
 import { isInside, listDir, listSubfolders } from './folders.js';
+import { runSync, syncRoot, syncStatus, unsynced } from './gitsync.js';
 import { jobsConfigured, JobsPoller } from './jobs.js';
 import { buildCommand, childEnv, getEnv, hookSettings, UUID_RE } from './launch.js';
 import { PtyManager } from './ptys.js';
@@ -32,6 +33,7 @@ let poller;
 let control = null;
 let watcher = null; // file-tree watch for the zoomed agent
 let hooksFile = null; // --settings file that makes claude report to Tessera
+const sync = { folder: null, root: null, lastFetch: 0, running: false }; // sync reminder state
 
 // ---------------------------------------------------------------------------
 // Startup
@@ -196,7 +198,10 @@ function createWindow() {
   win.on('focus', () => {
     win.flashFrame(false);
     send('app:focus');
+    refreshSync({ fetch: true });
   });
+  const syncTimer = setInterval(() => refreshSync(), 60000);
+  win.on('closed', () => clearInterval(syncTimer));
 
   let confirming = false;
   const saveWindowState = () =>
@@ -205,30 +210,15 @@ function createWindow() {
     });
   win.on('close', (e) => {
     if (quitting) return;
-    if (ptys.size === 0 || store.config.ui.confirmQuit === false) {
-      quitting = true;
-      saveWindowState();
-      return;
-    }
     // Ask first; the window closes again once the user confirms.
     e.preventDefault();
     if (confirming) return;
     confirming = true;
-    const n = ptys.size;
-    dialog
-      .showMessageBox(win, {
-        type: 'question',
-        buttons: ['Quit', 'Cancel'],
-        defaultId: 0,
-        cancelId: 1,
-        message: 'Quit Tessera?',
-        detail: `${n} terminal${n === 1 ? ' is' : 's are'} still running.`,
-        checkboxLabel: "Don't ask again",
-      })
-      .then(({ response, checkboxChecked }) => {
+    confirmQuit()
+      .catch(() => true)
+      .then((ok) => {
         confirming = false;
-        if (response !== 0 || !win) return;
-        if (checkboxChecked) store.update((c) => { c.ui.confirmQuit = false; });
+        if (!ok || !win) return;
         quitting = true;
         saveWindowState();
         win.close();
@@ -237,6 +227,70 @@ function createWindow() {
   win.on('closed', () => {
     win = null;
   });
+}
+
+// Before quitting: offer to sync unsynced work, else confirm running sessions.
+async function confirmQuit() {
+  const n = ptys.size;
+  const running = n ? ` ${n} session${n === 1 ? '' : 's'} will close.` : '';
+  if (sync.root) {
+    const status = await syncStatus(sync.root);
+    if (unsynced(status)) {
+      const { response } = await dialog.showMessageBox(win, {
+        type: 'question',
+        buttons: ['Sync and quit', 'Quit', 'Cancel'],
+        defaultId: 0,
+        cancelId: 2,
+        message: 'Sync before closing?',
+        detail: `${path.basename(sync.root)} has changes that are not on GitHub.${running}`,
+      });
+      if (response === 2) return false;
+      if (response === 1) return true;
+      send('app:toast', 'Syncing…');
+      const res = await runSync(sync.root, childEnv(process.env));
+      if (res.ok) return true;
+      await dialog.showMessageBox(win, { type: 'warning', buttons: ['OK'], message: 'Sync failed', detail: res.output });
+      refreshSync();
+      return false;
+    }
+  }
+  if (n === 0 || store.config.ui.confirmQuit === false) return true;
+  const { response, checkboxChecked } = await dialog.showMessageBox(win, {
+    type: 'question',
+    buttons: ['Quit', 'Cancel'],
+    defaultId: 0,
+    cancelId: 1,
+    message: 'Quit Tessera?',
+    detail: `${n} terminal${n === 1 ? ' is' : 's are'} still running.`,
+    checkboxLabel: "Don't ask again",
+  });
+  if (response !== 0) return false;
+  if (checkboxChecked) store.update((c) => { c.ui.confirmQuit = false; });
+  return true;
+}
+
+// Check whether the open folder's repo has anything not on GitHub and tell
+// the page. fetch: also look for new commits on GitHub (at most every 5 min).
+async function refreshSync({ fetch = false } = {}) {
+  const folder = store.config.folder;
+  if (!folder) {
+    send('sync:state', { enabled: false });
+    return;
+  }
+  if (sync.folder !== folder) {
+    sync.folder = folder;
+    sync.root = await syncRoot(folder, childEnv(process.env));
+    sync.lastFetch = 0;
+  }
+  if (!sync.root || store.config.folder !== folder) {
+    send('sync:state', { enabled: false });
+    return;
+  }
+  const doFetch = fetch && Date.now() - sync.lastFetch > 5 * 60000;
+  if (doFetch) sync.lastFetch = Date.now();
+  const status = await syncStatus(sync.root, { fetch: doFetch, env: childEnv(process.env) });
+  if (store.config.folder !== folder) return; // switched meanwhile
+  send('sync:state', status ? { enabled: true, running: sync.running, unsynced: unsynced(status), ...status } : { enabled: false });
 }
 
 app.on('window-all-closed', () => app.quit());
@@ -345,6 +399,7 @@ function registerIpc() {
     ptys.killAll();
     stopWatch();
     poller.reset();
+    refreshSync({ fetch: true });
     return { ...publicState(), ...openFolderState(store.config.folder) };
   });
 
@@ -369,6 +424,7 @@ function registerIpc() {
       c.folder = resolved;
       c.recent = [resolved, ...c.recent];
     });
+    refreshSync({ fetch: true });
     return { ...openFolderState(resolved), recent: publicState().recent };
   });
   handle('folder:subfolders', (folder) => {
@@ -412,6 +468,19 @@ function registerIpc() {
     }
   });
   on('fs:unwatch', () => stopWatch());
+  on('sync:refresh', () => refreshSync());
+  handle('sync:run', async () => {
+    if (!sync.root) return { ok: false, output: 'This folder is not in a repo with sync.sh.' };
+    if (sync.running) return { ok: false, output: 'A sync is already running.' };
+    sync.running = true;
+    await refreshSync();
+    try {
+      return await runSync(sync.root, childEnv(process.env));
+    } finally {
+      sync.running = false;
+      refreshSync();
+    }
+  });
   on('session:save', (folder, tree) => {
     if (typeof folder !== 'string' || !path.isAbsolute(folder)) return;
     if (tree !== null && (typeof tree !== 'object' || JSON.stringify(tree).length > 200000)) return;
