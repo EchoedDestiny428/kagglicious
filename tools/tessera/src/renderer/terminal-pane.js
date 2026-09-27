@@ -247,6 +247,8 @@ export class TerminalPane {
       this.sessionId = res.sessionId;
       this.events.onSessionChange?.(this);
     }
+    this.resumed = Boolean(res.resumed); // an existing conversation keeps its first system prompt
+    this.events.onStarted?.(this);
     this.mode = 'restore'; // a restart reopens the same conversation
     this.setStatus('running');
     this.fit(true);
@@ -415,12 +417,21 @@ export class TerminalPane {
   }
 
   // Type text as a paste (so multi-line text stays one message), then Enter.
-  async sendText(text) {
+  // typed: send as one typed line instead of a paste. Claude reads pasted
+  // text as material to look at, typed text as the user's own words; Tessera's
+  // own messages (check-ins, rules) go typed.
+  async sendText(text, { typed = false } = {}) {
     if (this.status !== 'running') throw new Error(`Pane ${this.id} is not running.`);
     this.lastOutputAt = Date.now(); // counts as activity, so an immediate "wait" does not return early
     this.clearNeedsInput();
-    this.term.paste(text);
-    await new Promise((r) => setTimeout(r, 150));
+    if (typed) {
+      const line = String(text).replace(/\s*\n\s*/g, ' ').trim();
+      this.onInput(line);
+      await new Promise((r) => setTimeout(r, 150 + Math.min(1500, line.length / 4)));
+    } else {
+      this.term.paste(text);
+      await new Promise((r) => setTimeout(r, 150));
+    }
     this.onInput('\r');
   }
 

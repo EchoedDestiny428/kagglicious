@@ -99,6 +99,16 @@ stops, whether it finished or is waiting for input, and every few minutes while 
 orchestrator then reviews the work and follows up without being asked. Check-ins are only sent while
 the orchestrator is idle and you are not in the middle of typing to it.
 
+**Rules** (the button in the orchestrator's header) edits `RULES.md` in the open folder, which is saved
+as you type. It is a good place for current issues ("never submit to Kaggle yourself", "run long jobs
+in tmux"). New sessions get the rules in their system prompt. A session that is already running, or
+a resumed conversation that started under older rules, is sent the new rules as a `[tessera]` message
+once it is idle. Tessera remembers which rules each conversation has seen, so each one gets a change
+only once. Editing `RULES.md` in another program works the same way.
+
+Agents are told that they are agents: they work in their own folder, leave other sessions to the
+orchestrator, and end each task with a short summary for it to read.
+
 ## Configuration
 
 Everything machine-specific lives in `config.local.json`, which git ignores. Running from source, it

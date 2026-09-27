@@ -837,6 +837,7 @@ button {
 }
 
 .side-card {
+  position: relative;
   flex: 1;
   min-width: 0;
   display: flex;
@@ -849,6 +850,77 @@ button {
 
 .side-head .icon {
   color: var(--text-2);
+}
+
+/* Rules button in the orchestrator header */
+.rules-btn {
+  height: 24px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-3);
+  font: 500 12px var(--font-ui);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.rules-btn .icon {
+  color: inherit;
+}
+
+.rules-btn:hover {
+  background: var(--hover);
+  color: var(--text-2);
+}
+
+.rules-btn.active {
+  background: var(--active);
+  color: var(--text);
+}
+
+/* Rules editor, over the orchestrator's terminal */
+.rules {
+  position: absolute;
+  inset: var(--header-h) 0 0 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  animation: pop 0.14s var(--ease);
+}
+
+.rules-head {
+  height: 36px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.rules-name {
+  color: var(--text-3);
+  font: 500 11px var(--font-mono);
+  letter-spacing: 0.04em;
+}
+
+.rules-input {
+  flex: 1;
+  min-height: 0;
+  padding: 14px 16px;
+  border: 0;
+  resize: none;
+  background: transparent;
+  color: var(--text);
+  font: 13px/1.6 var(--font-mono);
+  outline: none;
+  user-select: text;
 }
 
 .side-slot {

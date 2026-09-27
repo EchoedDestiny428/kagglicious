@@ -1,4 +1,4 @@
-// Agent status and check-ins. Pure logic, no DOM, so it is unit-tested.
+// Agent status, check-ins and rule updates. Pure logic, no DOM, so it is unit-tested.
 //
 // Claude Code reports to Tessera through hooks (see launch.js): it needs
 // permission or input (Notification), it finished a turn (Stop), or it got a
@@ -111,4 +111,28 @@ export function notificationText(items) {
     title: asking.length ? `${asking.length} session${asking.length === 1 ? '' : 's'} need you` : `${items.length} sessions finished`,
     body: asking.length && asking.length < items.length ? `${names}; ${items.length - asking.length} more finished` : names,
   };
+}
+
+// Message sent to a session whose conversation has not seen the current rules.
+// One line: it is typed, so Claude takes it as the user's own words.
+export function rulesUpdateMessage(rules) {
+  const body = (rules ?? '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !/^#+\s/.test(l))
+    .join(' ')
+    .replace(/\s+/g, ' ');
+  return body
+    ? `[tessera] My rules for this workspace (RULES.md) are now: ${body} Follow them from now on, and reply with one short line.`
+    : '[tessera] I removed the workspace rules (RULES.md). Go back to your defaults, and reply with one short line.';
+}
+
+// Short fingerprint of a rules text, to remember which rules a conversation got.
+export function rulesHash(rules) {
+  let h = 0x811c9dc5; // FNV-1a
+  for (const ch of (rules ?? '').trim()) {
+    h ^= ch.codePointAt(0);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16);
 }

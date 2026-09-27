@@ -9,8 +9,9 @@ import { ControlServer } from './control.js';
 import { APP_ID, createShortcut, getStartAtLogin, rebuildIfStale, setStartAtLogin } from './desktop.js';
 import { isInside, listDir, listSubfolders } from './folders.js';
 import { runSync, syncRoot, syncStatus, unsynced } from './gitsync.js';
+import { MAX_RULES, promptText, readRules, RULES_FILE, TEMPLATE, writeRules } from './rules.js';
 import { jobsConfigured, JobsPoller } from './jobs.js';
-import { buildCommand, childEnv, getEnv, hookSettings, UUID_RE } from './launch.js';
+import { AGENT_HINT, buildCommand, childEnv, getEnv, hookSettings, ORCHESTRATION_HINT, UUID_RE } from './launch.js';
 import { PtyManager } from './ptys.js';
 import { hasTranscript } from './sessions.js';
 
@@ -34,6 +35,7 @@ let poller;
 let control = null;
 let watcher = null; // file-tree watch for the zoomed agent
 let hooksFile = null; // --settings file that makes claude report to Tessera
+let rulesWatcher = null; // RULES.md of the open folder
 const sync = { folder: null, root: null, lastFetch: 0, running: false }; // sync reminder state
 
 // ---------------------------------------------------------------------------
@@ -317,6 +319,7 @@ async function refreshSync({ fetch = false } = {}) {
 app.on('window-all-closed', () => app.quit());
 app.on('will-quit', () => {
   stopWatch();
+  rulesWatcher?.close();
   control?.stop();
   poller?.stop();
   ptys?.killAll();
@@ -355,15 +358,16 @@ function publicState() {
     ui: c.ui,
     claude: { model: c.claude.model, effort: c.claude.effort, permissionMode: c.claude.permissionMode, remoteControl: c.claude.remoteControl },
     startAtLogin: getStartAtLogin(app, ROOT),
+    rules: c.folder ? readRules(c.folder) : null,
     orchestrator: c.orchestrator,
     jobs: poller.state,
   };
 }
 
-// The folder to show at startup, with its saved panes.
+// A folder to show, with its saved panes and rules.
 function openFolderState(folder) {
-  if (!folder || !isDir(folder)) return { folder: null, session: null };
-  return { folder, session: store.config.sessions[folderKey(folder)] ?? null };
+  if (!folder || !isDir(folder)) return { folder: null, session: null, rules: null };
+  return { folder, session: store.config.sessions[folderKey(folder)] ?? null, rules: readRules(folder) };
 }
 
 function onConfigChanged() {
@@ -422,6 +426,7 @@ function registerIpc() {
     stopWatch();
     poller.reset();
     refreshSync({ fetch: true });
+    watchRules();
     return { ...publicState(), ...openFolderState(store.config.folder) };
   });
 
@@ -447,6 +452,7 @@ function registerIpc() {
       c.recent = [resolved, ...c.recent];
     });
     refreshSync({ fetch: true });
+    watchRules();
     return { ...openFolderState(resolved), recent: publicState().recent };
   });
   handle('folder:subfolders', (folder) => {
@@ -527,6 +533,17 @@ function registerIpc() {
     return publicState();
   });
   handle('login:set', (on) => setStartAtLogin(app, ROOT, on === true));
+  handle('rules:get', () => ({ text: store.config.folder ? readRules(store.config.folder) : null, template: TEMPLATE }));
+  handle('rules:save', (text) => {
+    const folder = store.config.folder;
+    if (!folder || typeof text !== 'string' || text.length > MAX_RULES) return { error: 'Could not save the rules.' };
+    try {
+      writeRules(folder, text);
+      return { ok: true };
+    } catch (err) {
+      return { error: `Could not save ${RULES_FILE}: ${err.code || err.message}` };
+    }
+  });
   handle('config:open', async () => {
     if (!fs.existsSync(store.file)) store.flush();
     return (await shell.openPath(store.file)) || null;
@@ -606,7 +623,8 @@ function spawnPane(req) {
   let launch;
   try {
     const remoteName = role === 'orchestrator' ? `${path.basename(cwd)}-orchestrator` : path.basename(cwd);
-    launch = buildCommand({ role, session: sess, hooksFile: control ? hooksFile : null, remoteName }, store.config, env);
+    const promptFile = role === 'shell' ? null : writePromptFile(role);
+    launch = buildCommand({ role, session: sess, hooksFile: control ? hooksFile : null, remoteName, promptFile }, store.config, env);
   } catch (err) {
     return { error: err.message };
   }
@@ -712,4 +730,51 @@ function notify({ title, body, paneId }) {
   });
   n.show();
   win.flashFrame(true);
+}
+
+// ---------------------------------------------------------------------------
+// Rulebook: the text appended to a session's system prompt is written to a
+// file per role (hint and rules for the orchestrator, rules for agents).
+
+function writePromptFile(role) {
+  const folder = store.config.folder;
+  const rules = folder ? readRules(folder) : null;
+  const text = promptText(role, rules, {
+    orchestrator: store.config.claude.orchestration ? ORCHESTRATION_HINT : '',
+    agent: AGENT_HINT,
+  });
+  if (!text) return null;
+  try {
+    const file = path.join(app.getPath('userData'), 'prompts', `${role}.md`);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, text);
+    return file;
+  } catch (err) {
+    console.error('tessera: could not write the prompt file:', err.message);
+    return null;
+  }
+}
+
+// Tell the page when RULES.md changes, including edits made in other editors.
+function watchRules() {
+  rulesWatcher?.close();
+  rulesWatcher = null;
+  const folder = store.config.folder;
+  if (!folder || !isDir(folder)) return;
+  let timer = null;
+  try {
+    rulesWatcher = fs.watch(folder, (_event, name) => {
+      if (name && name !== RULES_FILE) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (store.config.folder === folder) send('rules:changed', readRules(folder));
+      }, 300);
+    });
+    rulesWatcher.on('error', () => {
+      rulesWatcher?.close();
+      rulesWatcher = null;
+    });
+  } catch {
+    rulesWatcher = null;
+  }
 }

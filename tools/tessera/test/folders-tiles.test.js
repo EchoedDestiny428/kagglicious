@@ -49,10 +49,10 @@ test('gridShape keeps tiles roughly square', () => {
 });
 
 test('readSaved tolerates anything in the config file', () => {
-  assert.deepEqual(readSaved(null), { orchestrator: null, agents: [] });
-  assert.deepEqual(readSaved({ type: 'split', children: [] }), { orchestrator: null, agents: [] });
+  assert.deepEqual(readSaved(null), { orchestrator: null, agents: [], rulesSeen: {} });
+  assert.deepEqual(readSaved({ type: 'split', children: [] }), { orchestrator: null, agents: [], rulesSeen: {} });
   assert.deepEqual(readSaved({
     orchestrator: 'abc',
     agents: [{ cwd: '/a', sessionId: 'x' }, { cwd: '' }, null, { cwd: '/b', sessionId: 5 }, 'nope'],
-  }), { orchestrator: 'abc', agents: [{ cwd: '/a', sessionId: 'x' }, { cwd: '/b', sessionId: null }] });
+  }), { orchestrator: 'abc', agents: [{ cwd: '/a', sessionId: 'x' }, { cwd: '/b', sessionId: null }], rulesSeen: {} });
 });

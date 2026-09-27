@@ -58,6 +58,11 @@ contextBridge.exposeInMainWorld('tessera', {
   setPrefs: (patch) => ipcRenderer.invoke('prefs:set', patch),
   setTheme: (theme) => ipcRenderer.invoke('theme:set', theme),
   setStartAtLogin: (on) => ipcRenderer.invoke('login:set', on),
+  rules: {
+    get: () => ipcRenderer.invoke('rules:get'),
+    save: (text) => ipcRenderer.invoke('rules:save', text),
+    onChanged: listen('rules:changed'),
+  },
   openConfig: () => ipcRenderer.invoke('config:open'),
 
   menu: (items) => ipcRenderer.invoke('menu:popup', items),

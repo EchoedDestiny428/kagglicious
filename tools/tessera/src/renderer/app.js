@@ -2,9 +2,10 @@ import '@fontsource-variable/geist';
 import '@fontsource-variable/geist-mono';
 import '@xterm/xterm/css/xterm.css';
 import './styles.css';
-import { checkInMessage, hookState, notificationText, TaskWatch } from './checkins.js';
+import { checkInMessage, hookState, notificationText, rulesHash, rulesUpdateMessage, TaskWatch } from './checkins.js';
 import { basename, h, icon, iconButton, pathKey } from './dom.js';
 import { JobsStrip } from './jobs-strip.js';
+import { RulesEditor } from './rules-editor.js';
 import { openSettings } from './settings.js';
 import { TerminalPane } from './terminal-pane.js';
 import { gridShape, readSaved } from './tiles.js';
@@ -28,6 +29,7 @@ const state = {
   terminal: { fontSize: 13, scrollback: 10000, fontFamily: '' },
   claude: { model: '', effort: '', permissionMode: '', remoteControl: false },
   startAtLogin: null, // null where the system has no login items
+  rules: null, // RULES.md of the open folder, or null
   orchestratorPrefs: { checkIns: false, checkInterval: 5 },
   theme: api.initialTheme,
   windowsBuild: 0,
@@ -35,6 +37,10 @@ const state = {
 };
 let nextId = 1;
 let saveTimer = null;
+// sessionId -> rulesHash of the rules that conversation has been given, for
+// the open folder. A resumed conversation keeps the system prompt it started
+// with, so rules it has not seen are sent to it as a message.
+let rulesSeen = {};
 
 const key = (p) => pathKey(p, api.platform);
 
@@ -75,10 +81,19 @@ new ResizeObserver(() => layoutGrid()).observe(els.agents);
 const orchTitle = h('span', { class: 'side-title' });
 const checkInsBtn = h('button', { class: 'switch-toggle', type: 'button', role: 'switch', 'aria-checked': 'false', onClick: () => setCheckIns(!state.orchestratorPrefs.checkIns) },
   h('span', { text: 'Check-ins' }), h('span', { class: 'switch' }, h('span', { class: 'switch-knob' })));
-const orchHead = h('header', { class: 'side-head' }, icon('network', 15), h('span', { class: 'side-name', text: 'Orchestrator' }), orchTitle, checkInsBtn);
+const rulesBtn = h('button', { class: 'text-btn rules-btn', type: 'button', title: 'Rules for every session (RULES.md)', onClick: () => toggleRules() },
+  icon('book', 14), h('span', { text: 'Rules' }));
+const orchHead = h('header', { class: 'side-head' }, icon('network', 15), h('span', { class: 'side-name', text: 'Orchestrator' }), orchTitle, rulesBtn, checkInsBtn);
 const orchSlot = h('div', { class: 'side-slot' });
 const resizer = h('div', { class: 'side-resizer' });
 const sideCard = h('div', { class: 'side-card' }, orchHead, orchSlot);
+const rulesEditor = new RulesEditor(sideCard, {
+  onClose: (text) => {
+    rulesBtn.classList.remove('active');
+    rulesChanged(text);
+  },
+  onError: (msg) => toast(msg, { sticky: true }),
+});
 els.side.append(resizer, sideCard);
 setupSidebarResize();
 
@@ -137,6 +152,7 @@ function applyState(s) {
   if (s.jobs) jobs.update(s.jobs);
   if (s.claude) state.claude = s.claude;
   if ('startAtLogin' in s) state.startAtLogin = s.startAtLogin;
+  if ('rules' in s) state.rules = s.rules;
   if (s.orchestrator) state.orchestratorPrefs = s.orchestrator;
   renderCheckIns();
 }
@@ -262,6 +278,7 @@ async function openFolder(folder) {
     });
     if (!confirmed) return;
   }
+  await rulesEditor.close(); // saves pending edits while they still go to this folder
   const res = await api.folder.open(folder);
   if (!res || res.error) {
     toast(res?.error ?? 'Could not open the folder.');
@@ -270,6 +287,7 @@ async function openFolder(folder) {
   if (saveTimer) saveNow();
   await closeAll();
   state.recent = res.recent;
+  state.rules = res.rules; // before any session starts, so each one records the right rules
   showFolder(res.folder, res.session);
 }
 
@@ -278,6 +296,7 @@ function showFolder(folder, session) {
   state.subfolders = [];
   if (folder) {
     const saved = readSaved(session);
+    rulesSeen = saved.rulesSeen;
     openOrchestrator(saved.orchestrator);
     for (const a of saved.agents) openAgent(a.cwd, { mode: 'restore', sessionId: a.sessionId, save: false });
     els.side.classList.add('enter');
@@ -357,6 +376,7 @@ function paneEvents() {
   return {
     onMenu: (pane) => paneMenu(pane),
     onSessionChange: () => saveSoon(),
+    onStarted: (pane) => rulesStarted(pane),
   };
 }
 
@@ -463,6 +483,7 @@ function zoomIn(pane) {
 
 // End everything without touching the folder's saved state.
 async function closeAll() {
+  await rulesEditor.close();
   if (zoom.isOpen) await zoom.close({ animate: false });
   for (const { pane, tile } of state.agents) {
     pane.dispose();
@@ -489,6 +510,9 @@ function saveNow() {
   api.saveSession(state.folder, {
     orchestrator: state.orchestrator?.sessionId ?? null,
     agents: state.agents.map((a) => a.pane.payload()),
+    rulesSeen: Object.fromEntries(allPanes()
+      .filter((p) => p.sessionId && rulesSeen[p.sessionId])
+      .map((p) => [p.sessionId, rulesSeen[p.sessionId]])),
   });
 }
 
@@ -657,10 +681,53 @@ function tickCheckIns() {
   pendingCheckIns.clear();
   // A progress-only check-in is routine: don't notify when the orchestrator answers it.
   orch.routineTurn = batch.every((e) => e.kind === 'working');
-  orch.sendText(checkInMessage(batch)).catch(() => {});
+  orch.sendText(checkInMessage(batch), { typed: true }).catch(() => {});
 }
 
-setInterval(tickCheckIns, 2000);
+setInterval(() => {
+  tickCheckIns();
+  tickRules();
+}, 2000);
+
+// ---------------------------------------------------------------------------
+// Rulebook (RULES.md): new sessions get it in their system prompt; running
+// ones are sent the new text once they are free.
+
+async function toggleRules() {
+  if (rulesEditor.isOpen) {
+    await rulesEditor.close();
+  } else if (state.folder) {
+    rulesBtn.classList.add('active');
+    await rulesEditor.open();
+  }
+}
+
+function rulesChanged(text) {
+  state.rules = text;
+}
+
+// A new conversation got the current rules in its system prompt; a resumed
+// one only has what it was given before.
+function rulesStarted(pane) {
+  if (!pane.sessionId) return;
+  if (!pane.resumed) rulesSeen[pane.sessionId] = rulesHash(state.rules);
+  else rulesSeen[pane.sessionId] ??= rulesHash(null); // saved before rules existed
+  saveSoon();
+}
+
+// Send the current rules to sessions that have not seen them, once each is free.
+function tickRules() {
+  const current = rulesHash(state.rules);
+  for (const p of allPanes()) {
+    if (p.status !== 'running' || !p.sessionId) continue;
+    if (!rulesSeen[p.sessionId] || rulesSeen[p.sessionId] === current) continue;
+    if (p.controlState !== 'idle' || p.idleSeconds < 3 || p.userTyping) continue;
+    rulesSeen[p.sessionId] = current;
+    saveSoon();
+    p.routineTurn = true; // no "finished" notification for the acknowledgement
+    p.sendText(rulesUpdateMessage(state.rules), { typed: true }).catch(() => {});
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Notifications: events that arrive together become one notification. The
@@ -843,6 +910,10 @@ api.pty.onExit((ptyId, code) => paneForPty(ptyId)?.handleExit(code));
 api.onConfigChanged((s) => applyState(s));
 api.onToast((msg) => toast(msg));
 api.onFocus(() => refreshSubfolders());
+api.rules.onChanged((text) => {
+  if (rulesEditor.isOpen) rulesEditor.external(text);
+  else rulesChanged(text);
+});
 api.sync.onState((s) => {
   state.sync = s ?? { enabled: false };
   render();
