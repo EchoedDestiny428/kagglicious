@@ -33,7 +33,8 @@ export class TerminalPane {
     this.status = 'idle';
     this.title = '';
     this.busy = false;
-    this.attention = false;
+    this.needsInput = null; // null, or the question Claude is waiting on ('' if unknown)
+    this.stoppedAt = 0; // when Claude last finished a turn (Stop hook)
     this.focused = false;
     this.disposed = false;
     this.opened = false;
@@ -101,10 +102,7 @@ export class TerminalPane {
       this.updateHeaders();
     });
     this.term.onBell(() => {
-      if (!this.focused) {
-        this.attention = true;
-        this.updateHeaders();
-      }
+      if (!this.focused && this.needsInput === null) this.setNeedsInput('');
     });
   }
 
@@ -138,7 +136,7 @@ export class TerminalPane {
     }
   }
 
-  // Show state in a header: root gets status/busy/attention classes, title gets the text.
+  // Show state in a header: root gets status/busy/needs-you classes, title gets the text.
   bindHeader(parts) {
     this.headers.add(parts);
     this.updateHeaders();
@@ -149,8 +147,8 @@ export class TerminalPane {
     for (const { root, title } of this.headers) {
       root.dataset.status = this.status;
       root.classList.toggle('busy', this.busy);
-      root.classList.toggle('attention', this.attention);
-      if (title) title.textContent = this.title;
+      root.classList.toggle('needs-you', this.needsInput !== null);
+      if (title) title.textContent = this.needsInput !== null ? this.needsInput || 'Waiting for your input' : this.title;
     }
   }
 
@@ -161,6 +159,7 @@ export class TerminalPane {
     // Remember whether the user has a message half-typed (Enter sends it,
     // Ctrl+C clears it), so Tessera never types into the middle of it.
     this.lastKeyAt = Date.now();
+    this.clearNeedsInput(); // answering by hand
     if ((key === 'enter' && !e.shiftKey) || (ctrlOnly && key === 'c' && !this.term.hasSelection())) this.draft = false;
     else if (e.key.length === 1 || key === 'backspace' || (ctrlOnly && key === 'v')) this.draft = true;
     if (!IS_MAC && ctrlOnly && key === 'c') {
@@ -307,10 +306,24 @@ export class TerminalPane {
 
   setFocused(focused) {
     this.focused = focused;
-    if (focused && this.attention) {
-      this.attention = false;
-      this.updateHeaders();
-    }
+  }
+
+  // Claude is waiting on the user (permission, a question, or the bell).
+  setNeedsInput(message) {
+    this.needsInput = String(message ?? '');
+    this.updateHeaders();
+  }
+
+  clearNeedsInput() {
+    if (this.needsInput === null) return;
+    this.needsInput = null;
+    this.updateHeaders();
+  }
+
+  // Claude finished a turn.
+  markStopped() {
+    this.stoppedAt = Date.now();
+    this.clearNeedsInput();
   }
 
   focus() {
@@ -385,6 +398,7 @@ export class TerminalPane {
   // 'working' while output is still arriving, 'idle' once it has stopped.
   get controlState() {
     if (this.status !== 'running') return this.status;
+    if (this.needsInput !== null) return 'needs-input';
     return Date.now() - this.lastOutputAt < BUSY_MS ? 'working' : 'idle';
   }
 
@@ -401,6 +415,7 @@ export class TerminalPane {
   async sendText(text) {
     if (this.status !== 'running') throw new Error(`Pane ${this.id} is not running.`);
     this.lastOutputAt = Date.now(); // counts as activity, so an immediate "wait" does not return early
+    this.clearNeedsInput();
     this.term.paste(text);
     await new Promise((r) => setTimeout(r, 150));
     this.onInput('\r');

@@ -14,7 +14,7 @@ export const DEFAULTS = Object.freeze({
   orchestrator: { checkIns: false, checkInterval: 5 }, // minutes between progress check-ins
   shell: { command: '', args: [] }, // terminal in the zoomed view; empty = platform default
   terminal: { fontSize: 13, scrollback: 10000, fontFamily: '' },
-  ui: { theme: null, orchestratorWidth: 460, confirmClose: true, confirmQuit: true },
+  ui: { theme: null, orchestratorWidth: 460, notifications: true, confirmClose: true, confirmQuit: true },
   window: null,
   jobs: { host: '', command: '', intervalSeconds: 30, sshCommand: 'ssh', sshArgs: [] },
 });
@@ -130,6 +130,7 @@ export function sanitize(raw, platform = process.platform) {
         ...ui,
         theme: ui.theme === 'light' || ui.theme === 'dark' ? ui.theme : null,
         orchestratorWidth: int(ui.orchestratorWidth, DEFAULTS.ui.orchestratorWidth, 280, 1200),
+        notifications: bool(ui.notifications, true),
         confirmClose: bool(ui.confirmClose, true),
         confirmQuit: bool(ui.confirmQuit, true),
       },

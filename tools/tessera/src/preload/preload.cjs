@@ -61,6 +61,8 @@ contextBridge.exposeInMainWorld('tessera', {
     write: (text) => ipcRenderer.send('clipboard:write', text),
   },
   openExternal: (url) => ipcRenderer.send('shell:open', url),
+  notify: (msg) => ipcRenderer.send('notify', msg),
+  onNotifyClick: listen('notify:click'),
   pathForFile: (file) => {
     try {
       return webUtils.getPathForFile(file) || '';

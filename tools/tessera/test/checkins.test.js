@@ -67,7 +67,7 @@ test('check-in message is one line and says what to do', () => {
   ]);
   assert.ok(msg.startsWith('[tessera] Check-in: '));
   assert.ok(!msg.includes('\n'));
-  assert.match(msg, /fib \(pane 2\) has stopped/);
+  assert.match(msg, /fib \(pane 2\) has finished its turn/);
   assert.match(msg, /primes \(pane 3\) is still working \(5 min\)/);
   assert.match(msg, /tell the user when everything is done/);
   assert.match(checkInMessage([{ id: '3', name: 'p', kind: 'working', minutes: 5 }]), /step in only if/);

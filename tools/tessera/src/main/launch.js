@@ -170,7 +170,17 @@ export function settingFlags(claude, args) {
 //   role 'orchestrator' | 'agent': claude; session { id, resume } becomes
 //     --resume <id> (an existing conversation) or --session-id <id> (a new one)
 //   role 'shell': the configured shell, or the platform's default
-export function buildCommand({ role, session }, config, env, platform = process.platform) {
+// Claude Code hooks that report to Tessera: when a session needs permission or
+// input (Notification), finishes a turn (Stop) or gets a new prompt
+// (UserPromptSubmit). Each runs `tessera hook`, which reads the event from stdin.
+export function hookSettings() {
+  const run = [{ hooks: [{ type: 'command', command: 'tessera hook' }] }];
+  return { hooks: { Notification: run, Stop: run, UserPromptSubmit: run } };
+}
+
+//   hooksFile: path of a JSON file holding hookSettings(), passed as --settings
+//   (skipped if claude.args already has --settings, which would clash)
+export function buildCommand({ role, session, hooksFile }, config, env, platform = process.platform) {
   let command;
   let args;
   if (role === 'shell') {
@@ -181,6 +191,7 @@ export function buildCommand({ role, session }, config, env, platform = process.
     command = config.claude.command;
     args = settingFlags(config.claude, stripSessionFlags(config.claude.args));
     if (session && UUID_RE.test(session.id)) args.push(session.resume ? '--resume' : '--session-id', session.id);
+    if (hooksFile && !args.some((a) => a === '--settings' || a.startsWith('--settings='))) args.push('--settings', hooksFile);
     if (role === 'orchestrator' && config.claude.orchestration && !args.some((a) => a.startsWith('--append-system-prompt'))) {
       args.push('--append-system-prompt', ORCHESTRATION_HINT);
     }

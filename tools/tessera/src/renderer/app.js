@@ -2,7 +2,7 @@ import '@fontsource-variable/geist';
 import '@fontsource-variable/geist-mono';
 import '@xterm/xterm/css/xterm.css';
 import './styles.css';
-import { checkInMessage, TaskWatch } from './checkins.js';
+import { checkInMessage, hookState, notificationText, TaskWatch } from './checkins.js';
 import { basename, h, icon, iconButton, pathKey } from './dom.js';
 import { JobsStrip } from './jobs-strip.js';
 import { openSettings } from './settings.js';
@@ -75,7 +75,8 @@ const checkInsBtn = h('button', { class: 'switch-toggle', type: 'button', role: 
 const orchHead = h('header', { class: 'side-head' }, icon('network', 15), h('span', { class: 'side-name', text: 'Orchestrator' }), orchTitle, checkInsBtn);
 const orchSlot = h('div', { class: 'side-slot' });
 const resizer = h('div', { class: 'side-resizer' });
-els.side.append(resizer, h('div', { class: 'side-card' }, orchHead, orchSlot));
+const sideCard = h('div', { class: 'side-card' }, orchHead, orchSlot);
+els.side.append(resizer, sideCard);
 setupSidebarResize();
 
 const zoom = new ZoomView(els.main, {
@@ -327,9 +328,9 @@ function openOrchestrator(sessionId) {
     events: paneEvents(),
   });
   state.orchestrator = pane;
-  pane.bindHeader({ root: orchHead, title: orchTitle });
+  pane.bindHeader({ root: sideCard, title: orchTitle });
   pane.mount(orchSlot);
-  pane.start();
+  queueStart(pane);
   pane.focus();
 }
 
@@ -367,7 +368,7 @@ function openAgent(cwd, { mode = 'new', sessionId = null, save = true } = {}) {
   state.agents.push({ pane, tile, slot });
   render();
   pane.mount(slot);
-  pane.start();
+  queueStart(pane);
   if (save) saveSoon();
   return pane;
 }
@@ -532,6 +533,7 @@ function showSettings(anchor) {
   openSettings(anchor, {
     ...state.claude,
     checkInterval: state.orchestratorPrefs.checkInterval,
+    notifications: state.ui.notifications !== false,
     fontSize: state.terminal.fontSize,
   }, {
     onChange: async (patch) => {
@@ -577,6 +579,8 @@ function tickCheckIns() {
     state: pane.controlState,
     idleMs: pane.idleSeconds * 1000,
     lastOutputAt: pane.lastOutputAt,
+    stoppedAt: pane.stoppedAt,
+    message: pane.needsInput ?? '',
   }));
   const events = watch.check(agents, now, state.orchestratorPrefs.checkInterval * 60000);
   if (!state.orchestratorPrefs.checkIns) {
@@ -588,12 +592,61 @@ function tickCheckIns() {
   // Only when the orchestrator is free and the user is not typing to it.
   if (!pendingCheckIns.size || !orch || orch.status !== 'running') return;
   if (orch.controlState !== 'idle' || orch.idleSeconds < 3 || orch.userTyping) return;
-  const message = checkInMessage([...pendingCheckIns.values()]);
+  const batch = [...pendingCheckIns.values()];
   pendingCheckIns.clear();
-  orch.sendText(message).catch(() => {});
+  // A progress-only check-in is routine: don't notify when the orchestrator answers it.
+  orch.routineTurn = batch.every((e) => e.kind === 'working');
+  orch.sendText(checkInMessage(batch)).catch(() => {});
 }
 
 setInterval(tickCheckIns, 2000);
+
+// ---------------------------------------------------------------------------
+// Notifications: events that arrive together become one notification. The
+// main process only shows it while the window is not in front.
+
+const NOTIFY_GATHER_MS = 1500;
+let notifyItems = [];
+let notifyTimer = null;
+
+function queueNotification(pane, kind, message) {
+  const name = pane.role === 'orchestrator' ? 'Orchestrator' : pane.label;
+  notifyItems = notifyItems.filter((i) => i.paneId !== pane.id);
+  notifyItems.push({ paneId: pane.id, name, kind, message });
+  clearTimeout(notifyTimer);
+  notifyTimer = setTimeout(() => {
+    const items = notifyItems;
+    notifyItems = [];
+    if (!items.length) return;
+    const { title, body } = notificationText(items);
+    const first = items.find((i) => i.kind === 'needs-input') ?? items[0];
+    api.notify({ title, body, paneId: first.paneId });
+  }, NOTIFY_GATHER_MS);
+}
+
+// ---------------------------------------------------------------------------
+// Starting sessions one at a time, so opening many does not spike the CPU.
+
+const START_GAP_MS = 300;
+const startQueue = [];
+let starting = false;
+
+function queueStart(pane) {
+  startQueue.push(pane);
+  if (!starting) runStartQueue();
+}
+
+// Always waits after a start, so panes queued meanwhile (one per call) are spaced too.
+async function runStartQueue() {
+  starting = true;
+  while (startQueue.length) {
+    const pane = startQueue.shift();
+    if (pane.disposed) continue;
+    pane.start();
+    await new Promise((r) => setTimeout(r, START_GAP_MS));
+  }
+  starting = false;
+}
 
 // ---------------------------------------------------------------------------
 // Keyboard
@@ -665,6 +718,29 @@ const control = {
     }
     return pane.readText(Math.min(2000, Math.max(1, Number(lines) || 60)));
   },
+  // From the Claude Code hooks Tessera installs (via `tessera hook` in the pane).
+  hook: ({ event, type, message, sessionId }, from) => {
+    const pane = allPanes().find((p) => p.id === String(from));
+    if (!pane) return false;
+    if (sessionId && sessionId !== pane.sessionId && /^[0-9a-f-]{36}$/i.test(sessionId)) {
+      // /clear or /resume moved the pane to another conversation: resume that one next time.
+      pane.sessionId = sessionId;
+      saveSoon();
+    }
+    const what = hookState({ event, type, message });
+    if (what === 'needs-input') {
+      pane.setNeedsInput(message);
+      queueNotification(pane, 'needs-input', message);
+    } else if (what === 'stopped') {
+      pane.markStopped();
+      const routine = pane.routineTurn;
+      pane.routineTurn = false;
+      if (!routine) queueNotification(pane, 'stopped', message);
+    } else if (what === 'prompt') {
+      pane.clearNeedsInput();
+    }
+    return true;
+  },
   open: ({ cwd }) => {
     if (!state.folder) throw new Error('No folder is open.');
     const existing = state.agents.find((a) => key(a.pane.cwd) === key(cwd));
@@ -698,6 +774,17 @@ api.pty.onExit((ptyId, code) => paneForPty(ptyId)?.handleExit(code));
 api.onConfigChanged((s) => applyState(s));
 api.onToast((msg) => toast(msg));
 api.onFocus(() => refreshSubfolders());
+api.onNotifyClick((paneId) => {
+  const pane = allPanes().find((p) => p.id === paneId);
+  if (!pane) return;
+  if (pane.role === 'orchestrator') {
+    if (zoom.isOpen) zoom.close({ animate: false });
+    pane.focus();
+  } else if (zoom.pane !== pane) {
+    if (zoom.isOpen) zoom.close({ animate: false }).then(() => zoomIn(pane));
+    else zoomIn(pane);
+  }
+});
 api.jobs.onUpdate((s) => jobs.update(s));
 window.addEventListener('beforeunload', () => {
   if (saveTimer) saveNow();

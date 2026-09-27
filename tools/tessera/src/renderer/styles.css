@@ -25,6 +25,7 @@
   --invert-text: #0a0a0a;
   --scrim: rgba(10, 10, 10, 0.82);
   --veil: rgba(0, 0, 0, 0.35);
+  --ring: rgba(255, 255, 255, 0.16);
   --bg-soft: #070707;
   --shadow: 0 12px 32px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.06);
   --shadow-lg: 0 30px 80px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.05);
@@ -46,6 +47,7 @@
   --invert-text: #fafafa;
   --scrim: rgba(255, 255, 255, 0.84);
   --veil: rgba(242, 242, 242, 0.45);
+  --ring: rgba(0, 0, 0, 0.12);
   --bg-soft: #fafafa;
   --shadow: 0 12px 32px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 30px 80px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.05);
@@ -497,8 +499,34 @@ button {
   box-shadow: inset 0 0 0 1.5px var(--text-3);
 }
 
-.attention .dot {
+/* Needs you: Claude is waiting for permission or an answer. A solid ring that
+   breathes, the question in bold where the title was. */
+.tile.needs-you,
+.side-card.needs-you {
+  border-color: var(--text);
+  animation: needs-you 1.8s ease-in-out infinite;
+}
+
+.needs-you .dot {
+  background: var(--text);
   box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--text);
+}
+
+.needs-you .tile-title,
+.needs-you .side-title,
+.needs-you .zoom-title {
+  color: var(--text);
+  font-weight: 600;
+}
+
+@keyframes needs-you {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px var(--text);
+  }
+  50% {
+    box-shadow: 0 0 0 1px var(--text), 0 0 0 5px var(--ring);
+  }
 }
 
 /* --------------------------------------------------------------- terminal */
@@ -921,6 +949,14 @@ body.resizing .xterm {
 .switch-toggle:hover {
   background: var(--hover);
   color: var(--text-2);
+}
+
+.switch-toggle.bare {
+  padding: 0;
+}
+
+.switch-toggle.bare:hover {
+  background: transparent;
 }
 
 .switch {

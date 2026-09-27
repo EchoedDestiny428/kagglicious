@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, powerMonitor, screen, session, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, screen, session, shell } from 'electron';
 import { execFile } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -8,7 +8,7 @@ import { ConfigStore, folderKey } from './config.js';
 import { ControlServer } from './control.js';
 import { isInside, listDir, listSubfolders } from './folders.js';
 import { jobsConfigured, JobsPoller } from './jobs.js';
-import { buildCommand, childEnv, getEnv, UUID_RE } from './launch.js';
+import { buildCommand, childEnv, getEnv, hookSettings, UUID_RE } from './launch.js';
 import { PtyManager } from './ptys.js';
 import { hasTranscript } from './sessions.js';
 
@@ -31,6 +31,7 @@ let ptys;
 let poller;
 let control = null;
 let watcher = null; // file-tree watch for the zoomed agent
+let hooksFile = null; // --settings file that makes claude report to Tessera
 
 // ---------------------------------------------------------------------------
 // Startup
@@ -70,6 +71,7 @@ async function start() {
 
   poller = new JobsPoller({ getConfig: () => store.config, onUpdate: (state) => send('jobs:update', state) });
 
+  hooksFile = writeHooksFile();
   control = new ControlServer({ handle: handleControl });
   try {
     await control.start();
@@ -191,7 +193,10 @@ function createWindow() {
   win.on('hide', () => poller.setPaused(true));
   win.on('restore', () => poller.setPaused(false));
   win.on('show', () => poller.setPaused(false));
-  win.on('focus', () => send('app:focus'));
+  win.on('focus', () => {
+    win.flashFrame(false);
+    send('app:focus');
+  });
 
   let confirming = false;
   const saveWindowState = () =>
@@ -421,6 +426,7 @@ function registerIpc() {
     if (!patch || typeof patch !== 'object') return;
     store.update((c) => {
       if ('confirmClose' in patch) c.ui.confirmClose = patch.confirmClose;
+      if ('notifications' in patch) c.ui.notifications = patch.notifications;
       if ('orchestratorWidth' in patch) c.ui.orchestratorWidth = patch.orchestratorWidth;
       if ('fontSize' in patch) c.terminal.fontSize = patch.fontSize;
       for (const k of ['model', 'effort', 'permissionMode']) if (k in patch) c.claude[k] = patch[k];
@@ -465,6 +471,9 @@ function registerIpc() {
   on('shell:open', (url) => typeof url === 'string' && openExternal(url));
 
   on('jobs:refresh', () => poller.refresh());
+  on('notify', (msg) => {
+    if (msg && typeof msg === 'object' && typeof msg.title === 'string' && store.config.ui.notifications !== false) notify(msg);
+  });
 }
 
 // Build and show a native context menu; resolves with the chosen item id or null.
@@ -504,7 +513,7 @@ function spawnPane(req) {
   const env = paneEnv(req.paneId);
   let launch;
   try {
-    launch = buildCommand({ role, session: sess }, store.config, env);
+    launch = buildCommand({ role, session: sess, hooksFile: control ? hooksFile : null }, store.config, env);
   } catch (err) {
     return { error: err.message };
   }
@@ -539,7 +548,7 @@ function paneEnv(paneId) {
 // Requests from the `tessera` command. The page owns the panes, so most are
 // answered there.
 
-const CONTROL_COMMANDS = new Set(['list', 'send', 'read', 'open']);
+const CONTROL_COMMANDS = new Set(['list', 'send', 'read', 'open', 'hook']);
 const controlWaiting = new Map();
 let controlSeq = 0;
 
@@ -561,6 +570,7 @@ function handleControl(cmd, args, from) {
     if (!path.isAbsolute(cwd) || !isDir(cwd)) throw new Error(`Folder not found: ${cwd}`);
   }
   if (cmd === 'send' && (typeof args.text !== 'string' || args.text.length > 100000)) throw new Error('Text is missing or too long.');
+  if (cmd === 'hook' && typeof args.event !== 'string') throw new Error('Bad hook event.');
   return new Promise((resolve, reject) => {
     if (!win || win.isDestroyed()) return reject(new Error('The Tessera window is closed.'));
     const id = ++controlSeq;
@@ -572,4 +582,34 @@ function handleControl(cmd, args, from) {
     // Which pane asked, so the page can tell the orchestrator's requests apart.
     send('control:request', id, cmd, args, typeof from === 'string' && /^\d{1,6}$/.test(from) ? from : null);
   });
+}
+
+// The hooks file lives with the app's per-user data (never in the repo).
+function writeHooksFile() {
+  try {
+    const file = path.join(app.getPath('userData'), 'claude-hooks.json');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(hookSettings(), null, 2));
+    return file;
+  } catch (err) {
+    console.error('tessera: could not write the hooks file:', err.message);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Desktop notifications, only while the window is not in front.
+
+function notify({ title, body, paneId }) {
+  if (!win || win.isDestroyed() || win.isFocused() || !Notification.isSupported()) return;
+  const n = new Notification({ title: String(title).slice(0, 120), body: String(body ?? '').slice(0, 300), silent: false });
+  n.on('click', () => {
+    if (!win || win.isDestroyed()) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    if (paneId) send('notify:click', String(paneId));
+  });
+  n.show();
+  win.flashFrame(true);
 }

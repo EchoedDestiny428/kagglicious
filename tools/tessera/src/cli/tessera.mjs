@@ -162,6 +162,25 @@ const commands = {
     const res = await request('open', { cwd: folderArg(argv[0]) });
     console.log(`Opened pane ${res.id}.`);
   },
+
+  // Not for people: Claude Code runs this from the hooks Tessera gives it
+  // (the JSON event arrives on stdin). It must stay quiet and never fail,
+  // or Claude would show hook errors.
+  async hook() {
+    try {
+      const raw = await Promise.race([readStdin(), sleep(3000).then(() => '')]);
+      const e = JSON.parse(raw || '{}');
+      await request('hook', {
+        event: String(e.hook_event_name ?? ''),
+        type: String(e.notification_type ?? ''),
+        message: String(e.message ?? e.last_assistant_message ?? '').replace(/\s+/g, ' ').trim().slice(0, 300),
+        sessionId: String(e.session_id ?? ''),
+      });
+    } catch {
+      // Tessera closed, or not inside Tessera: nothing to report to.
+    }
+    process.exit(0);
+  },
 };
 
 const [cmd, ...argv] = process.argv.slice(2);

@@ -6,7 +6,7 @@ const PERMISSIONS = [['', 'Default'], ['auto', 'Auto'], ['acceptEdits', 'Accept 
 const INTERVALS = [[2, 'Every 2 min'], [5, 'Every 5 min'], [10, 'Every 10 min'], [15, 'Every 15 min']];
 
 // Settings popover under the gear button.
-//   values: { model, effort, permissionMode, checkInterval, fontSize }
+//   values: { model, effort, permissionMode, checkInterval, notifications, fontSize }
 //   onChange(patch): a value changed
 //   onOpenConfig(): open config.local.json
 export function openSettings(anchor, values, { onChange, onOpenConfig }) {
@@ -35,12 +35,26 @@ export function openSettings(anchor, values, { onChange, onOpenConfig }) {
     onChange({ fontSize: size });
   };
 
+  // On/off switch; the label row itself toggles it.
+  const toggle = (value, key) => {
+    let on = Boolean(value);
+    const el = h('button', { class: 'switch-toggle bare', type: 'button', role: 'switch', 'aria-checked': String(on) },
+      h('span', { class: 'switch' }, h('span', { class: 'switch-knob' })));
+    el.addEventListener('click', () => {
+      on = !on;
+      el.setAttribute('aria-checked', String(on));
+      onChange({ [key]: on });
+    });
+    return el;
+  };
+
   const row = (label, control) => h('label', { class: 'settings-row' }, h('span', { text: label }), control);
   const panel = h('div', { class: 'settings', role: 'dialog', 'aria-label': 'Settings' },
     row('Model', select(MODELS, values.model, 'model')),
     row('Effort', select(EFFORTS, values.effort, 'effort')),
     row('Permissions', select(PERMISSIONS, values.permissionMode, 'permissionMode')),
     row('Check-ins', select(INTERVALS, values.checkInterval, 'checkInterval', Number)),
+    row('Notifications', toggle(values.notifications, 'notifications')),
     row('Font size', h('div', { class: 'stepper' },
       iconButton('minus', 'Smaller', () => step(-1)),
       sizeText,
