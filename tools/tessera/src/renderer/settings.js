@@ -6,10 +6,9 @@ const PERMISSIONS = [['', 'Default'], ['auto', 'Auto'], ['acceptEdits', 'Accept 
 const INTERVALS = [[2, 'Every 2 min'], [5, 'Every 5 min'], [10, 'Every 10 min'], [15, 'Every 15 min']];
 
 // Settings popover under the gear button.
-//   values: { orchestrator: { model, effort }, agent: { model, effort }, permissionMode, remoteControl,
-//     checkInterval, notifications, startAtLogin, fontSize, autoSync, syncAvailable, boost, boostMinutes }
-//   (startAtLogin is null where the system does not support it; Auto sync
-//   shows only for a folder in a repo with sync.sh)
+//   values: { agent: { model, effort }, permissionMode, remoteControl,
+//     checkInterval, notifications, startAtLogin, fontSize, boost, boostMinutes }
+//   (startAtLogin is null where the system does not support it)
 //   onChange(patch): a value changed
 //   onOpenConfig(): open config.local.json
 export function openSettings(anchor, values, { onChange, onOpenConfig }) {
@@ -29,7 +28,7 @@ export function openSettings(anchor, values, { onChange, onOpenConfig }) {
     return h('div', { class: 'select' }, el, icon('chevron', 13));
   };
 
-  // Model and effort for one role, side by side.
+  // Model and effort for the agents, side by side.
   const roleSelects = (role) => {
     const current = { ...values[role] };
     const pick = (k) => (v) => {
@@ -67,20 +66,18 @@ export function openSettings(anchor, values, { onChange, onOpenConfig }) {
 
   const row = (label, control, title, cls = '') => h('label', { class: `settings-row ${cls}`.trim(), title }, h('span', { text: label }), control);
   const panel = h('div', { class: 'settings', role: 'dialog', 'aria-label': 'Settings' },
-    row('Orchestrator', roleSelects('orchestrator')),
     row('Agents', roleSelects('agent')),
     row('Boost', toggle(values.boost, 'boost'), `Orchestrator and agents think harder on every prompt for ${values.boostMinutes} min`, 'boost-row'),
     row('Permissions', select(PERMISSIONS, values.permissionMode, 'permissionMode')),
     row('Remote Control', toggle(values.remoteControl, 'remoteControl'), 'Continue sessions from the Claude app or claude.ai'),
     row('Check-ins', select(INTERVALS, values.checkInterval, 'checkInterval', Number)),
     row('Notifications', toggle(values.notifications, 'notifications')),
-    values.syncAvailable ? row('Auto sync', toggle(values.autoSync, 'autoSync'), 'Commit, pull and push this repo every few minutes (sync.sh)') : null,
     values.startAtLogin === null ? null : row('Start at login', toggle(values.startAtLogin, 'startAtLogin')),
     row('Font size', h('div', { class: 'stepper' },
       iconButton('minus', 'Smaller', () => step(-1)),
       sizeText,
       iconButton('plus', 'Larger', () => step(1)))),
-    h('p', { class: 'settings-note', text: 'Model, effort, permissions and Remote Control apply to new sessions.' }),
+    h('p', { class: 'settings-note', text: 'Agent model and effort also switch open agents. Permissions and Remote Control apply to new sessions.' }),
     h('button', { class: 'settings-link', type: 'button', onClick: () => onOpenConfig() }, 'Edit config file', icon('chevronRight', 13)));
 
   const close = () => {

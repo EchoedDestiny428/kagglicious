@@ -2,8 +2,7 @@
   "claude": {
     "command": "claude",
     "args": [],
-    "orchestrator": { "model": "", "effort": "" },
-    "agent": { "model": "", "effort": "" },
+    "agent": { "model": "sonnet", "effort": "high" },
     "permissionMode": "",
     "remoteControl": false,
     "resumeOnRestore": true,
@@ -12,10 +11,6 @@
   "orchestrator": {
     "checkIns": false,
     "checkInterval": 5
-  },
-  "sync": {
-    "auto": true,
-    "intervalMinutes": 5
   },
   "shell": { "command": "", "args": [] },
   "terminal": {

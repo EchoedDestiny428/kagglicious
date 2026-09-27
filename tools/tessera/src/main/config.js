@@ -9,12 +9,12 @@ export const DEFAULTS = Object.freeze({
   folder: null, // the open folder
   recent: [], // recently opened folders, newest first
   sessions: {}, // folder key -> { orchestrator, agents } saved for that folder
-  // model / effort per role, and permissionMode: '' leaves Claude Code's own default.
+  // agent: model / effort for the agents (the orchestrator is left to Claude
+  // Code's defaults). '' means Claude Code's own default, as for permissionMode.
   claude: {
     command: 'claude',
     args: [],
-    orchestrator: { model: '', effort: '' },
-    agent: { model: '', effort: '' },
+    agent: { model: 'sonnet', effort: 'high' },
     permissionMode: '',
     remoteControl: false,
     resumeOnRestore: true,
@@ -23,7 +23,6 @@ export const DEFAULTS = Object.freeze({
   orchestrator: { checkIns: false, checkInterval: 5 }, // minutes between progress check-ins
   shell: { command: '', args: [] }, // terminal in the zoomed view; empty = platform default
   terminal: { fontSize: 13, scrollback: 10000, fontFamily: '' },
-  sync: { auto: true, intervalMinutes: 5 }, // commit, pull and push repos with sync.sh
   ui: { theme: null, orchestratorWidth: 460, notifications: true, confirmClose: true, confirmQuit: true },
   window: null,
   jobs: { host: '', command: '', intervalSeconds: 30, sshCommand: 'ssh', sshArgs: [] },
@@ -81,14 +80,18 @@ function sanitizeWindow(w) {
 
 const withoutKeys = (obj, keys) => Object.fromEntries(Object.entries(obj).filter(([k]) => !keys.includes(k)));
 
-// Model and effort for one role. Configs from before per-role settings had one
-// claude.model / claude.effort for every session; both roles start from those.
+// Model and effort for the agents. Older configs had claude.model /
+// claude.effort for every session; the agents keep those. A missing value
+// gets the default; '' (Claude Code's default) is kept.
 function sanitizeRole(role, legacy) {
   const src = isObj(role) ? role : { model: legacy.model, effort: legacy.effort };
+  const def = DEFAULTS.claude.agent;
+  const model = src.model ?? def.model;
+  const effort = src.effort ?? def.effort;
   return {
     ...src,
-    model: typeof src.model === 'string' && MODEL_RE.test(src.model) ? src.model : '',
-    effort: EFFORTS.includes(src.effort) ? src.effort : '',
+    model: typeof model === 'string' && (model === '' || MODEL_RE.test(model)) ? model : def.model,
+    effort: effort === '' || EFFORTS.includes(effort) ? effort : def.effort,
   };
 }
 
@@ -102,7 +105,6 @@ export function sanitize(raw, platform = process.platform) {
   const terminal = pick('terminal');
   const ui = pick('ui');
   const jobs = pick('jobs');
-  const sync = pick('sync');
 
   // The open folder is always the first recent one.
   const folder = typeof src.folder === 'string' && pathFor(platform).isAbsolute(src.folder)
@@ -129,10 +131,9 @@ export function sanitize(raw, platform = process.platform) {
       recent,
       sessions,
       claude: {
-        ...withoutKeys(claude, ['model', 'effort']),
+        ...withoutKeys(claude, ['model', 'effort', 'orchestrator']),
         command: str(claude.command, DEFAULTS.claude.command).trim() || DEFAULTS.claude.command,
         args: strList(claude.args),
-        orchestrator: sanitizeRole(claude.orchestrator, claude),
         agent: sanitizeRole(claude.agent, claude),
         permissionMode: PERMISSION_MODES.includes(claude.permissionMode) ? claude.permissionMode : '',
         remoteControl: bool(claude.remoteControl, false),
@@ -143,11 +144,6 @@ export function sanitize(raw, platform = process.platform) {
         ...orchestrator,
         checkIns: bool(orchestrator.checkIns, false),
         checkInterval: int(orchestrator.checkInterval, DEFAULTS.orchestrator.checkInterval, 1, 60),
-      },
-      sync: {
-        ...sync,
-        auto: bool(sync.auto, DEFAULTS.sync.auto),
-        intervalMinutes: int(sync.intervalMinutes, DEFAULTS.sync.intervalMinutes, 1, 120),
       },
       shell: { ...shell, command: str(shell.command, '').trim(), args: strList(shell.args) },
       terminal: {

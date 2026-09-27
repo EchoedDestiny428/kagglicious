@@ -37,16 +37,19 @@ The shortcut runs the current source: Tessera rebuilds the page on launch if a f
   gets a breathing ring and shows the question. While Tessera is in the background, a desktop
   notification says when a session needs you or finishes; click it to jump there.
 - **Sync dot**: in a repo with `sync.sh` (like kaggle-lab), a dot next to the folder name means work
-  is not on GitHub yet. The folder menu then offers **Sync now**, and quitting offers **Sync and quit**.
-  **Auto sync** (Settings, on by default) runs `sync.sh` every 5 minutes when there is anything to sync,
-  committing as `wip: auto sync`. A failed sync (a conflict, or a file the pre-commit hook blocks) is
-  shown once.
+  is not on GitHub yet. Tessera never commits or syncs itself; that is left to the sessions (kaggle-lab's
+  `CLAUDE.md` tells them when).
 - Tessera saves each folder's orchestrator and agents. Next launch it reopens the last folder, and every
   session resumes its own conversation.
-- **Settings** (gear, top right): model and effort for the orchestrator and for the agents (one row
-  each), Boost, permission mode, Remote Control, the check-in interval, notifications, auto sync, start
-  at login, and font size. Model, effort, permissions and Remote Control apply to sessions started (or
-  resumed) afterwards.
+- **Settings** (gear, top right): model and effort for the agents (Sonnet, high effort by default),
+  Boost, permission mode, Remote Control, the check-in interval, notifications, start at login, and font
+  size. Agents started later get the model and effort as flags. Open agents switch too: Tessera types
+  `/model` and `/effort` into each one once it is idle and you are not typing in it. Claude Code saves
+  what those commands set as its default for new sessions, including plain `claude` elsewhere (only
+  max effort is not saved); choosing Default model or Default effort clears that saved default.
+  Permissions and Remote Control apply to sessions started (or resumed) afterwards.
+- The orchestrator starts with Claude Code's own defaults. To change its model or effort, type `/model`
+  or `/effort` in it.
 - **Boost** (Settings): for the next 10 minutes, every prompt the orchestrator or an agent gets asks it
   to think harder, the way Claude Code's `ultrathink` does for one prompt. The gear shows a dot while it
   is on, and it switches itself off. It adds a note to each prompt through Tessera's prompt hook; it

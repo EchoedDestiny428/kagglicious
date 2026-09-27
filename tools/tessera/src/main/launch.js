@@ -167,10 +167,10 @@ export function stripFlags(args, flags, valued = flags) {
 export const stripSessionFlags = (args) =>
   stripFlags(args, ['--session-id', '--resume', '-r', '--continue', '-c', '--fork-session'], ['--session-id', '--resume', '-r']);
 
-// The Settings values for a role: its own model and effort, and the shared
-// permission mode.
+// The Settings values for a role: agents get their model and effort, the
+// orchestrator Claude Code's defaults; both get the permission mode.
 export function roleSettings(claude, role) {
-  const own = claude[role === 'orchestrator' ? 'orchestrator' : 'agent'] ?? {};
+  const own = role === 'agent' ? claude.agent ?? {} : {};
   return { model: own.model ?? '', effort: own.effort ?? '', permissionMode: claude.permissionMode ?? '' };
 }
 

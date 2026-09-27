@@ -136,3 +136,12 @@ export function rulesHash(rules) {
   }
   return h.toString(16);
 }
+
+// Slash commands that switch an open session to new Settings, as [key, command]
+// pairs. An empty value goes back to Claude Code's default.
+export function settingCommands({ model, effort } = {}) {
+  const out = [];
+  if (model !== undefined) out.push(['model', `/model ${model || 'default'}`]);
+  if (effort !== undefined) out.push(['effort', `/effort ${effort || 'auto'}`]);
+  return out;
+}

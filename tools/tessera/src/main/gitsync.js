@@ -1,12 +1,11 @@
 // Sync reminder: for a folder inside a git repo whose root has sync.sh (the
-// kaggle-lab convention), report whether it has changes not on GitHub, and
-// run sync.sh on request.
+// kaggle-lab convention), report whether it has changes not on GitHub.
+// Committing and syncing is left to the sessions.
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const GIT_TIMEOUT = 15000;
-const SYNC_TIMEOUT = 180000;
 
 // `git status --porcelain=v2 --branch` -> { dirty, ahead, behind, upstream }
 export function parseStatus(text) {
@@ -51,24 +50,4 @@ export async function syncStatus(root, { fetch = false, env = process.env } = {}
   if (fetch) await run('git', ['-C', root, 'fetch', '-q'], { timeout: GIT_TIMEOUT, env: gitEnv(env) });
   const res = await run('git', ['-C', root, 'status', '--porcelain=v2', '--branch'], { timeout: GIT_TIMEOUT, env: gitEnv(env) });
   return res.ok ? parseStatus(res.stdout) : null;
-}
-
-// The shell that runs sync.sh: sh on macOS/Linux, Git for Windows' sh.exe on Windows.
-export function findShell(env = process.env, platform = process.platform, exists = fs.existsSync) {
-  if (platform !== 'win32') return 'sh';
-  const candidates = [path.win32.join(env.ProgramFiles || 'C:\\Program Files', 'Git', 'bin', 'sh.exe')];
-  for (const dir of (env.PATH || env.Path || '').split(';')) {
-    // ...\Git\cmd\git.exe on PATH means ...\Git\bin\sh.exe next to it.
-    if (/[\\/]git[\\/]cmd[\\/]?$/i.test(dir)) candidates.push(path.win32.join(dir, '..', 'bin', 'sh.exe'));
-  }
-  return candidates.find((c) => exists(c)) ?? null;
-}
-
-// message: the commit message for uncommitted changes (sync.sh's default if omitted).
-export async function runSync(root, env = process.env, message = '') {
-  const sh = findShell(env);
-  if (!sh) return { ok: false, output: 'Could not find sh (it comes with Git for Windows).' };
-  const res = await run(sh, [path.join(root, 'sync.sh'), ...(message ? [message] : [])], { cwd: root, timeout: SYNC_TIMEOUT, env: gitEnv(env) });
-  const output = `${res.stdout}${res.stderr}`.trim();
-  return { ok: res.ok, output: output || (res.ok ? 'Up to date.' : 'Sync failed.') };
 }

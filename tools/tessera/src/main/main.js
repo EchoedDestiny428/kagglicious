@@ -8,7 +8,7 @@ import { ConfigStore, folderKey } from './config.js';
 import { ControlServer } from './control.js';
 import { APP_ID, createShortcut, getStartAtLogin, rebuildIfStale, setStartAtLogin } from './desktop.js';
 import { isInside, listDir, listSubfolders } from './folders.js';
-import { runSync, syncRoot, syncStatus, unsynced } from './gitsync.js';
+import { syncRoot, syncStatus, unsynced } from './gitsync.js';
 import { MAX_RULES, promptText, readRules, RULES_FILE, TEMPLATE, writeRules } from './rules.js';
 import { jobsConfigured, JobsPoller } from './jobs.js';
 import { AGENT_HINT, buildCommand, childEnv, getEnv, hookSettings, ORCHESTRATION_HINT, UUID_RE } from './launch.js';
@@ -36,8 +36,7 @@ let control = null;
 let watcher = null; // file-tree watch for the zoomed agent
 let hooksFile = null; // --settings file that makes claude report to Tessera
 let rulesWatcher = null; // RULES.md of the open folder
-// Sync reminder and auto sync state for the open folder's repo.
-const sync = { folder: null, root: null, lastFetch: 0, running: false, lastAuto: Date.now(), autoError: null };
+const sync = { folder: null, root: null, lastFetch: 0 }; // sync reminder state
 
 // ---------------------------------------------------------------------------
 // Startup
@@ -219,10 +218,7 @@ function createWindow() {
     send('app:focus');
     refreshSync({ fetch: true });
   });
-  const syncTimer = setInterval(() => {
-    refreshSync();
-    autoSync();
-  }, 60000);
+  const syncTimer = setInterval(() => refreshSync(), 60000);
   win.on('closed', () => clearInterval(syncTimer));
 
   let confirming = false;
@@ -236,8 +232,7 @@ function createWindow() {
     e.preventDefault();
     if (confirming) return;
     confirming = true;
-    // The page saves what is still pending (the rules editor) first, so a
-    // sync before quitting includes it.
+    // The page saves what is still pending (the rules editor) first.
     askPage('flush', {})
       .catch(() => null)
       .then(() => confirmQuit())
@@ -257,31 +252,9 @@ function createWindow() {
   });
 }
 
-// Before quitting: offer to sync unsynced work, else confirm running sessions.
+// Before quitting: confirm when a session is in the middle of something.
 async function confirmQuit() {
   const n = ptys.size;
-  const running = n ? ` ${n} session${n === 1 ? '' : 's'} will close.` : '';
-  if (sync.root) {
-    const status = await syncStatus(sync.root);
-    if (unsynced(status)) {
-      const { response } = await dialog.showMessageBox(win, {
-        type: 'question',
-        buttons: ['Sync and quit', 'Quit', 'Cancel'],
-        defaultId: 0,
-        cancelId: 2,
-        message: 'Sync before closing?',
-        detail: `${path.basename(sync.root)} has changes that are not on GitHub.${running}`,
-      });
-      if (response === 2) return false;
-      if (response === 1) return true;
-      send('app:toast', 'Syncing…');
-      const res = await runSync(sync.root, childEnv(process.env));
-      if (res.ok) return true;
-      await dialog.showMessageBox(win, { type: 'warning', buttons: ['OK'], message: 'Sync failed', detail: res.output });
-      refreshSync();
-      return false;
-    }
-  }
   if (n === 0 || store.config.ui.confirmQuit === false) return true;
   // Sessions close cleanly, so only ask when one is in the middle of something.
   const busy = await askPage('busy', {}).catch(() => null);
@@ -321,34 +294,7 @@ async function refreshSync({ fetch = false } = {}) {
   if (doFetch) sync.lastFetch = Date.now();
   const status = await syncStatus(sync.root, { fetch: doFetch, env: childEnv(process.env) });
   if (store.config.folder !== folder) return; // switched meanwhile
-  send('sync:state', status ? { enabled: true, running: sync.running, unsynced: unsynced(status), ...status } : { enabled: false });
-}
-
-// Every few minutes, sync the open folder's repo when it has anything to sync.
-// A failure is shown once; the same failure again stays quiet.
-async function autoSync() {
-  const { auto, intervalMinutes } = store.config.sync;
-  if (!auto || !sync.root || sync.running || quitting) return;
-  if (Date.now() - sync.lastAuto < intervalMinutes * 60000) return;
-  sync.lastAuto = Date.now();
-  const env = childEnv(process.env);
-  const root = sync.root;
-  const status = await syncStatus(root, { fetch: true, env });
-  if (!unsynced(status) || sync.running || sync.root !== root) return;
-  sync.running = true;
-  refreshSync();
-  let res;
-  try {
-    res = await runSync(root, env, 'wip: auto sync');
-  } finally {
-    sync.running = false;
-    refreshSync();
-  }
-  if (res.ok) sync.autoError = null;
-  else if (res.output !== sync.autoError) {
-    sync.autoError = res.output;
-    send('app:toast', `Auto sync failed. ${res.output}`, { sticky: true });
-  }
+  send('sync:state', status ? { enabled: true, unsynced: unsynced(status), ...status } : { enabled: false });
 }
 
 app.on('window-all-closed', () => app.quit());
@@ -391,13 +337,7 @@ function publicState() {
     recent: c.recent.map((p) => ({ path: p, exists: isDir(p) })),
     terminal: c.terminal,
     ui: c.ui,
-    claude: {
-      orchestrator: c.claude.orchestrator,
-      agent: c.claude.agent,
-      permissionMode: c.claude.permissionMode,
-      remoteControl: c.claude.remoteControl,
-    },
-    autoSync: c.sync.auto,
+    claude: { agent: c.claude.agent, permissionMode: c.claude.permissionMode, remoteControl: c.claude.remoteControl },
     startAtLogin: getStartAtLogin(app, ROOT),
     rules: c.folder ? readRules(c.folder) : null,
     orchestrator: c.orchestrator,
@@ -538,18 +478,6 @@ function registerIpc() {
   });
   on('fs:unwatch', () => stopWatch());
   on('sync:refresh', () => refreshSync());
-  handle('sync:run', async () => {
-    if (!sync.root) return { ok: false, output: 'This folder is not in a repo with sync.sh.' };
-    if (sync.running) return { ok: false, output: 'A sync is already running.' };
-    sync.running = true;
-    await refreshSync();
-    try {
-      return await runSync(sync.root, childEnv(process.env));
-    } finally {
-      sync.running = false;
-      refreshSync();
-    }
-  });
   on('session:save', (folder, tree) => {
     if (typeof folder !== 'string' || !path.isAbsolute(folder)) return;
     if (tree !== null && (typeof tree !== 'object' || JSON.stringify(tree).length > 200000)) return;
@@ -568,13 +496,10 @@ function registerIpc() {
       if ('orchestratorWidth' in patch) c.ui.orchestratorWidth = patch.orchestratorWidth;
       if ('fontSize' in patch) c.terminal.fontSize = patch.fontSize;
       for (const k of ['permissionMode', 'remoteControl']) if (k in patch) c.claude[k] = patch[k];
-      // { orchestrator: { model?, effort? } } or { agent: { ... } }
-      for (const role of ['orchestrator', 'agent']) {
-        const values = patch[role];
-        if (!values || typeof values !== 'object') continue;
-        for (const k of ['model', 'effort']) if (typeof values[k] === 'string') c.claude[role][k] = values[k];
+      // { agent: { model?, effort? } }
+      if (patch.agent && typeof patch.agent === 'object') {
+        for (const k of ['model', 'effort']) if (typeof patch.agent[k] === 'string') c.claude.agent[k] = patch.agent[k];
       }
-      if ('autoSync' in patch) c.sync.auto = patch.autoSync === true;
       if ('checkIns' in patch) c.orchestrator.checkIns = patch.checkIns;
       if ('checkInterval' in patch) c.orchestrator.checkInterval = patch.checkInterval;
     });

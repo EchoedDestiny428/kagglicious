@@ -2,7 +2,7 @@ import '@fontsource-variable/geist';
 import '@fontsource-variable/geist-mono';
 import '@xterm/xterm/css/xterm.css';
 import './styles.css';
-import { checkInMessage, hookState, notificationText, rulesHash, rulesUpdateMessage, TaskWatch } from './checkins.js';
+import { checkInMessage, hookState, notificationText, rulesHash, rulesUpdateMessage, settingCommands, TaskWatch } from './checkins.js';
 import { basename, h, icon, iconButton, pathKey, switchToggle } from './dom.js';
 import { JobsStrip } from './jobs-strip.js';
 import { RulesEditor } from './rules-editor.js';
@@ -27,8 +27,7 @@ const state = {
   agents: [], // [{ pane, tile, slot }] in the order they were opened
   ui: {},
   terminal: { fontSize: 13, scrollback: 10000, fontFamily: '' },
-  claude: { orchestrator: { model: '', effort: '' }, agent: { model: '', effort: '' }, permissionMode: '', remoteControl: false },
-  autoSync: true, // commit, pull and push the open folder's repo every few minutes
+  claude: { agent: { model: '', effort: '' }, permissionMode: '', remoteControl: false },
   boost: false, // see BOOST_MINUTES
   startAtLogin: null, // null where the system has no login items
   rules: null, // RULES.md of the open folder, or null
@@ -161,7 +160,6 @@ function applyState(s) {
   if (s.jobs) jobs.update(s.jobs);
   if (s.claude) state.claude = s.claude;
   if ('startAtLogin' in s) state.startAtLogin = s.startAtLogin;
-  if ('autoSync' in s) state.autoSync = s.autoSync;
   if ('rules' in s) state.rules = s.rules;
   if (s.orchestrator) state.orchestratorPrefs = s.orchestrator;
   renderCheckIns();
@@ -231,39 +229,17 @@ function layoutGrid() {
 async function folderMenu() {
   state.recent = (await api.folder.recent()) ?? state.recent;
   const others = state.recent.filter((r) => !state.folder || key(r.path) !== key(state.folder));
-  const canSync = state.sync.enabled && state.sync.unsynced && !state.sync.running;
-  if (!others.length && !canSync) {
+  if (!others.length) {
     pickFolder();
     return;
   }
   const choice = await api.menu([
-    ...(canSync ? [{ id: 'sync', label: 'Sync now' }, { type: 'separator' }] : []),
     ...others.map((r, i) => ({ id: String(i), label: r.path, enabled: r.exists })),
     ...(others.length ? [{ type: 'separator' }] : []),
     { id: 'pick', label: 'Open folder…' },
   ]);
-  if (choice === 'sync') syncNow();
-  else if (choice === 'pick') pickFolder();
+  if (choice === 'pick') pickFolder();
   else if (choice !== null) openFolder(others[Number(choice)].path);
-}
-
-// Run the repo's sync.sh (commit, pull, push). Pulling can change files under
-// a session that is working, so ask first in that case.
-async function syncNow() {
-  const working = allPanes().filter((p) => p.controlState === 'working').length;
-  if (working) {
-    const { confirmed } = await api.confirm({
-      message: 'Sync now?',
-      detail: `${working} session${working === 1 ? ' is' : 's are'} working. Pulling can change files while they edit.`,
-      confirm: 'Sync',
-    });
-    if (!confirmed) return;
-  }
-  toast('Syncing…');
-  const { ok, output } = await api.sync.run();
-  const lines = String(output).split('\n').filter(Boolean);
-  if (ok) toast(lines.at(-1) ?? 'Synced.');
-  else toast(output, { sticky: true });
 }
 
 async function pickFolder() {
@@ -626,10 +602,8 @@ function showSettings(anchor) {
     notifications: state.ui.notifications !== false,
     startAtLogin: state.startAtLogin,
     fontSize: state.terminal.fontSize,
-    autoSync: state.autoSync,
     boost: state.boost,
     boostMinutes: BOOST_MINUTES,
-    syncAvailable: state.sync.enabled,
   }, {
     onChange: async (patch) => {
       if ('fontSize' in patch) {
@@ -645,12 +619,37 @@ function showSettings(anchor) {
         return;
       }
       applyState(await api.setPrefs(patch));
+      if (patch.agent) queueAgentSettings(Object.keys(patch.agent));
     },
     onOpenConfig: async () => {
       const err = await api.openConfig();
       if (err) toast(err);
     },
   });
+}
+
+// Open agents switch to new Settings by typing /model or /effort into them,
+// one command at a time, once each is idle and nothing is half-typed.
+// (Claude Code also keeps what they set as its default for new sessions.)
+function queueAgentSettings(keys) {
+  const values = {};
+  for (const k of keys) if (k in state.claude.agent) values[k] = state.claude.agent[k];
+  const commands = settingCommands(values);
+  for (const { pane } of state.agents) {
+    if (pane.status !== 'running' && pane.status !== 'starting') continue;
+    pane.pendingCommands ??= new Map();
+    for (const [k, cmd] of commands) pane.pendingCommands.set(k, cmd); // the newest value wins
+  }
+}
+
+function tickAgentSettings() {
+  for (const { pane: p } of state.agents) {
+    if (!p.pendingCommands?.size || p.status !== 'running') continue;
+    if (p.controlState !== 'idle' || p.idleSeconds < 3 || p.userTyping) continue;
+    const [k, cmd] = p.pendingCommands.entries().next().value;
+    p.pendingCommands.delete(k);
+    p.sendText(cmd, { typed: true }).catch(() => {});
+  }
 }
 
 function setBoost(on) {
@@ -715,6 +714,7 @@ function tickCheckIns() {
 setInterval(() => {
   tickCheckIns();
   tickRules();
+  tickAgentSettings();
 }, 2000);
 
 // ---------------------------------------------------------------------------

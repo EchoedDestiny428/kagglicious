@@ -42,7 +42,6 @@ contextBridge.exposeInMainWorld('tessera', {
   saveSession: (folder, tree) => ipcRenderer.send('session:save', folder, tree),
 
   sync: {
-    run: () => ipcRenderer.invoke('sync:run'),
     refresh: () => ipcRenderer.send('sync:refresh'),
     onState: listen('sync:state'),
   },

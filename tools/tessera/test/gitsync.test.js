@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { findShell, parseStatus, syncRoot, syncStatus, unsynced } from '../src/main/gitsync.js';
+import { parseStatus, syncRoot, syncStatus, unsynced } from '../src/main/gitsync.js';
 
 test('parseStatus reads branch counts and changed files', () => {
   const text = [
@@ -21,14 +21,6 @@ test('parseStatus reads branch counts and changed files', () => {
   assert.equal(unsynced({ dirty: 0, ahead: 0, behind: 0 }), false);
   assert.equal(unsynced({ dirty: 0, ahead: 0, behind: 3 }), true);
   assert.equal(unsynced(null), false);
-});
-
-test('findShell prefers Git for Windows, then the git on PATH', () => {
-  assert.equal(findShell({}, 'linux'), 'sh');
-  const has = (want) => (p) => p.toLowerCase() === want.toLowerCase();
-  assert.equal(findShell({ ProgramFiles: 'C:\\Program Files' }, 'win32', has('C:\\Program Files\\Git\\bin\\sh.exe')), 'C:\\Program Files\\Git\\bin\\sh.exe');
-  assert.equal(findShell({ ProgramFiles: 'C:\\PF', PATH: 'C:\\x;D:\\Tools\\Git\\cmd' }, 'win32', has('D:\\Tools\\Git\\bin\\sh.exe')), 'D:\\Tools\\Git\\bin\\sh.exe');
-  assert.equal(findShell({ PATH: '' }, 'win32', () => false), null);
 });
 
 test('syncRoot only accepts repos with sync.sh; syncStatus sees changes', async () => {
