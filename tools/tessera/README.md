@@ -27,10 +27,15 @@ npm test       # unit tests (node:test)
   right edge and a terminal in that folder slides in. It stays loaded while the view is open and is
   closed with it. Clicking a file in the tree adds `@path` to the agent's prompt (right-click: Open).
   Close with × in the top right.
+- **Needs you**: when a session waits for permission or an answer, its tile (or the orchestrator card)
+  gets a breathing ring and shows the question. While Tessera is in the background, a desktop
+  notification says when a session needs you or finishes; click it to jump there.
+- **Sync dot**: in a repo with `sync.sh` (like kaggle-lab), a dot next to the folder name means work
+  is not on GitHub yet. The folder menu then offers **Sync now**, and quitting offers **Sync and quit**.
 - Tessera saves each folder's orchestrator and agents. Next launch it reopens the last folder, and every
   session resumes its own conversation.
 - **Settings** (gear, top right): model, effort and permission mode for every Claude session, the
-  check-in interval, and font size. Model, effort and permissions apply to sessions started (or
+  check-in interval, notifications, and font size. Model, effort and permissions apply to sessions started (or
   resumed) afterwards.
 - Drag the sidebar's left edge to resize it. Day / night switch in the top right.
 
@@ -38,7 +43,9 @@ Shortcuts (Cmd instead of Ctrl on macOS):
 
 | Keys | |
 |---|---|
-| Ctrl+1 … 9 | zoom into agent N |
+| Ctrl+1 … 9 | show agent N (also while zoomed) |
+| Ctrl+Tab / Ctrl+Shift+Tab | next / previous agent, while zoomed |
+| Ctrl+Shift+F | find in the zoomed agent |
 | Ctrl+Shift+W | close the zoomed view |
 | Ctrl+` | show / hide the terminal in the zoomed view |
 | Ctrl+Shift+O | open folder |

@@ -83,15 +83,31 @@ setupSidebarResize();
 
 const zoom = new ZoomView(els.main, {
   getSettings: () => settings(),
-  onClose: (pane) => {
+  onRelease: (pane) => {
     const agent = state.agents.find((a) => a.pane === pane);
     if (agent) {
       pane.mount(agent.slot);
       pane.setFontSize(tileFont());
     }
-    els.main.classList.remove('zoomed');
   },
+  onClosed: () => els.main.classList.remove('zoomed'),
 });
+
+// While zoomed: show agent n (1-based), or step through the agents in order.
+function showAgent(n) {
+  const agent = state.agents[n - 1];
+  if (!agent) return false;
+  if (zoom.isOpen) zoom.switchTo(agent.pane, agent.tile);
+  else zoomIn(agent.pane);
+  return true;
+}
+
+function stepAgent(step) {
+  const n = state.agents.length;
+  if (!zoom.isOpen || n < 2) return;
+  const at = state.agents.findIndex((a) => a.pane === zoom.pane);
+  showAgent(((at + step + n) % n) + 1);
+}
 
 const jobs = new JobsStrip(els.jobs);
 
@@ -678,6 +694,13 @@ async function runStartQueue() {
 // Keyboard
 
 window.addEventListener('keydown', (e) => {
+  // Ctrl+Tab on every platform (Cmd+Tab belongs to macOS).
+  if (e.key === 'Tab' && e.ctrlKey && !e.altKey && !e.metaKey && zoom.isOpen) {
+    e.preventDefault();
+    e.stopPropagation();
+    stepAgent(e.shiftKey ? -1 : 1);
+    return;
+  }
   const mod = IS_MAC ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
   if (!mod) return;
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
@@ -687,6 +710,7 @@ window.addEventListener('keydown', (e) => {
       case 'o': folderMenu(); break;
       case 'l': toggleTheme(); break;
       case 'w': if (zoom.isOpen) zoom.close(); else handled = false; break;
+      case 'f': if (zoom.isOpen) zoom.openSearch(); else handled = false; break;
       default: handled = false;
     }
   } else if (!e.altKey && !e.shiftKey && k === '`' && zoom.isOpen) {
@@ -694,9 +718,7 @@ window.addEventListener('keydown', (e) => {
   } else if (!e.altKey && !e.shiftKey && (k === '=' || k === '+' || k === '-' || k === '0')) {
     changeFontSize(k === '0' ? 0 : k === '-' ? -1 : 1);
   } else if (!e.altKey && !e.shiftKey && /^[1-9]$/.test(k)) {
-    const agent = state.agents[Number(k) - 1];
-    if (agent && !zoom.isOpen) zoomIn(agent.pane);
-    else handled = false;
+    handled = showAgent(Number(k));
   } else {
     handled = false;
   }

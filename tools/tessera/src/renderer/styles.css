@@ -722,6 +722,61 @@ button {
   text-overflow: ellipsis;
 }
 
+/* Find in the zoomed terminal */
+.search-box {
+  position: absolute;
+  top: 10px;
+  right: 22px;
+  z-index: 6;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  animation: pop 0.12s var(--ease);
+}
+
+.search-box > .icon {
+  color: var(--text-3);
+}
+
+.search-input {
+  width: 200px;
+  height: 26px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: 13px var(--font-ui);
+  outline: none;
+  user-select: text;
+}
+
+.search-input::placeholder {
+  color: var(--text-3);
+}
+
+.search-count {
+  min-width: 34px;
+  color: var(--text-3);
+  font: 500 11.5px var(--font-mono);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.search-close {
+  width: 24px;
+  height: 24px;
+}
+
+.search-close svg {
+  width: 13px;
+  height: 13px;
+}
+
 /* Terminal that slides in from the right edge */
 .shell-edge {
   position: absolute;
