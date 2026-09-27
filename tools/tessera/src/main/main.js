@@ -237,7 +237,9 @@ function createWindow() {
         if (!ok || !win) return;
         quitting = true;
         saveWindowState();
-        win.close();
+        // Let every session exit cleanly out of sight, then close.
+        win.hide();
+        ptys.stopAll().then(() => win?.close());
       });
   });
   win.on('closed', () => {
@@ -271,13 +273,16 @@ async function confirmQuit() {
     }
   }
   if (n === 0 || store.config.ui.confirmQuit === false) return true;
+  // Sessions close cleanly, so only ask when one is in the middle of something.
+  const busy = await askPage('busy', {}).catch(() => null);
+  if (busy && !busy.length) return true;
   const { response, checkboxChecked } = await dialog.showMessageBox(win, {
     type: 'question',
     buttons: ['Quit', 'Cancel'],
     defaultId: 0,
     cancelId: 1,
     message: 'Quit Tessera?',
-    detail: `${n} terminal${n === 1 ? ' is' : 's are'} still running.`,
+    detail: busy ? busy.join('\n') : `${n} session${n === 1 ? ' is' : 's are'} running.`,
     checkboxLabel: "Don't ask again",
   });
   if (response !== 0) return false;
@@ -426,7 +431,7 @@ function registerIpc() {
   });
   on('pty:resize', (id, cols, rows) => ptys.resize(id, cols, rows));
   on('pty:ack', (id, chars) => ptys.ack(id, chars));
-  on('pty:kill', (id) => ptys.kill(id));
+  on('pty:kill', (id) => ptys.stop(id));
 
   handle('folder:pick', async () => {
     const res = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] });
@@ -606,7 +611,9 @@ function spawnPane(req) {
     return { error: err.message };
   }
   try {
-    const { id, pid } = ptys.spawn({ ...launch, cwd, env, cols: req.cols, rows: req.rows, meta: { sessionId: sess?.id ?? null } });
+    // Claude quits on a second Ctrl+C; stopping a pane presses it rather than killing.
+    const meta = { sessionId: sess?.id ?? null, exitKeys: role === 'shell' ? null : '\x03' };
+    const { id, pid } = ptys.spawn({ ...launch, cwd, env, cols: req.cols, rows: req.rows, meta });
     return { id, pid, sessionId: sess?.id ?? null, resumed: Boolean(sess?.resume) };
   } catch (err) {
     return { error: `Could not start ${path.basename(launch.file)}: ${err.message}` };
@@ -659,6 +666,11 @@ function handleControl(cmd, args, from) {
   }
   if (cmd === 'send' && (typeof args.text !== 'string' || args.text.length > 100000)) throw new Error('Text is missing or too long.');
   if (cmd === 'hook' && typeof args.event !== 'string') throw new Error('Bad hook event.');
+  return askPage(cmd, args, from);
+}
+
+// Ask the page (which owns the panes) and wait for its answer.
+function askPage(cmd, args, from = null) {
   return new Promise((resolve, reject) => {
     if (!win || win.isDestroyed()) return reject(new Error('The Tessera window is closed.'));
     const id = ++controlSeq;

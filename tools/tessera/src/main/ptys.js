@@ -7,6 +7,9 @@ const FLUSH_MS = 5;
 const FLUSH_BYTES = 256 * 1024;
 const HIGH_WATER = 1024 * 1024; // chars sent but not yet rendered
 const LOW_WATER = 256 * 1024;
+const EXIT_EVERY_MS = 400; // graceful stop: how often to press the exit keys
+const EXIT_TRIES = 4;
+const STOP_TIMEOUT_MS = 6000; // then the process is killed
 
 export class PtyManager {
   constructor({ onData, onExit, spawn = pty.spawn }) {
@@ -32,9 +35,12 @@ export class PtyManager {
     proc.onData((data) => this.#push(s, data));
     proc.onExit(({ exitCode, signal }) => {
       s.exited = true;
+      clearTimeout(s.stopTimer);
+      clearTimeout(s.killTimer);
       this.#flush(s);
       this.sessions.delete(id);
       this.onExit(id, exitCode, signal);
+      s.onGone?.();
     });
     return { id, pid: proc.pid };
   }
@@ -105,6 +111,8 @@ export class PtyManager {
     if (!s) return;
     // Counts as gone right away; the exit event can take a moment.
     s.killed = true;
+    clearTimeout(s.stopTimer);
+    clearTimeout(s.killTimer);
     try {
       s.proc.kill();
     } catch {
@@ -114,6 +122,45 @@ export class PtyManager {
 
   killAll() {
     for (const id of [...this.sessions.keys()]) this.kill(id);
+  }
+
+  // Ask the process to quit the way a person would: meta.exitKeys is sent
+  // every exitEvery ms, up to exitTries times (claude exits on a second
+  // Ctrl+C). Killed if it is still running after timeoutMs. Processes
+  // without exitKeys are killed at once. Resolves when the process is gone.
+  stop(id, timeoutMs = STOP_TIMEOUT_MS) {
+    const s = this.sessions.get(id);
+    if (!s || s.exited) return Promise.resolve();
+    if (!s.stopping) {
+      s.stopping = new Promise((resolve) => {
+        s.onGone = resolve;
+      });
+      const { exitKeys } = s.meta;
+      if (!exitKeys) {
+        this.kill(id);
+      } else {
+        s.killed = true; // counts as gone for size() and find()
+        let tries = 0;
+        const press = () => {
+          if (s.exited || tries >= EXIT_TRIES) return;
+          tries++;
+          try {
+            s.proc.write(exitKeys);
+          } catch {
+            // Exiting already.
+          }
+          s.stopTimer = setTimeout(press, EXIT_EVERY_MS);
+        };
+        press();
+        s.killTimer = setTimeout(() => this.kill(id), timeoutMs);
+      }
+    }
+    return s.stopping;
+  }
+
+  // Stop every process gracefully; resolves when all are gone.
+  stopAll(timeoutMs = STOP_TIMEOUT_MS) {
+    return Promise.all([...this.sessions.keys()].map((id) => this.stop(id, timeoutMs)));
   }
 
   // Processes still running and not being shut down.

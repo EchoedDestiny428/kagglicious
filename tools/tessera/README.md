@@ -30,6 +30,9 @@ The shortcut runs the current source: Tessera rebuilds the page on launch if a f
   right edge and a terminal in that folder slides in. It stays loaded while the view is open and is
   closed with it. Clicking a file in the tree adds `@path` to the agent's prompt (right-click: Open).
   Close with × in the top right.
+- **Closing** an agent (× on its tile), switching folders or quitting asks each Claude to quit cleanly
+  (it is killed only if it hasn't exited after 6 s). You are asked first only when a session is working,
+  waiting for your answer, or holds a message you haven't sent.
 - **Needs you**: when a session waits for permission or an answer, its tile (or the orchestrator card)
   gets a breathing ring and shows the question. While Tessera is in the background, a desktop
   notification says when a session needs you or finishes; click it to jump there.

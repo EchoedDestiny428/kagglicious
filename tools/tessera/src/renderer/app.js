@@ -253,11 +253,11 @@ function allPanes() {
 // folder's come back (resuming their conversations).
 async function openFolder(folder) {
   if (state.folder && key(folder) === key(state.folder)) return;
-  const running = allPanes().filter((p) => p.running).length;
-  if (running) {
+  const busy = allPanes().map(busyReason).filter(Boolean);
+  if (busy.length) {
     const { confirmed } = await api.confirm({
       message: `Open ${basename(folder)}?`,
-      detail: `${running} running session${running === 1 ? '' : 's'} in ${basename(state.folder)} will close. They resume when you open it again.`,
+      detail: `${busy.join(' ')} Sessions in ${basename(state.folder)} close and resume when you open it again.`,
       confirm: 'Open',
     });
     if (!confirmed) return;
@@ -417,11 +417,23 @@ function openAgent(cwd, { mode = 'new', sessionId = null, save = true } = {}) {
   return pane;
 }
 
+// Why closing this session now would interrupt something, or null if it is
+// safe (closing asks Claude to quit cleanly, and the conversation resumes later).
+function busyReason(pane) {
+  const name = pane.role === 'orchestrator' ? 'The orchestrator' : pane.label;
+  if (pane.status !== 'running') return null;
+  if (pane.controlState === 'needs-input') return `${name} is waiting for your answer.`;
+  if (pane.controlState === 'working') return `${name} is working.`;
+  if (pane.userTyping) return `${name} has a message you haven't sent.`;
+  return null;
+}
+
 async function closeAgent(pane) {
-  if (pane.running && state.ui.confirmClose !== false) {
+  const reason = busyReason(pane);
+  if (reason && state.ui.confirmClose !== false) {
     const { confirmed, checked } = await api.confirm({
       message: `Close ${pane.label}?`,
-      detail: 'Claude is still running in this folder.',
+      detail: reason,
       confirm: 'Close',
       checkbox: "Don't ask again",
     });
@@ -749,6 +761,8 @@ function controlPane(id) {
 }
 
 const control = {
+  // For the quit prompt (asked by the main process, not the CLI).
+  busy: () => allPanes().map(busyReason).filter(Boolean),
   list: () => ({
     panes: allPanes().map((p) => ({
       id: p.id, name: p.role === 'orchestrator' ? basename(p.cwd) : p.label, role: p.role, cwd: p.cwd,
