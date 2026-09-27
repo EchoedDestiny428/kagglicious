@@ -1,0 +1,35 @@
+#!/bin/sh
+# Stops commits that would publish secrets, machine-specific files or big files.
+# Enabled per clone with: git config core.hooksPath .githooks
+# To commit anyway (rarely right): git commit --no-verify
+
+limit_mb=20
+limit=$((limit_mb * 1024 * 1024))
+problems=""
+
+files=$(git -c core.quotepath=off diff --cached --name-only --diff-filter=ACMR)
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  name=${f##*/}
+  case "$name" in
+    *.example | *.example.*) ;;
+    kaggle.json | .env | .env.* | id_rsa | id_rsa.* | id_ed25519 | id_ed25519.* | *.pem | *.key | config.local.*)
+      problems="$problems
+  $f: secret or machine-specific file"
+      continue
+      ;;
+  esac
+  size=$(git cat-file -s ":$f" 2>/dev/null || echo 0)
+  if [ "$size" -gt "$limit" ]; then
+    problems="$problems
+  $f: $((size / 1024 / 1024)) MB (limit $limit_mb MB); keep it in data/ or runs/"
+  fi
+done <<EOF
+$files
+EOF
+
+if [ -n "$problems" ]; then
+  echo "Commit blocked:$problems" >&2
+  echo "Unstage with: git restore --staged <file>" >&2
+  exit 1
+fi

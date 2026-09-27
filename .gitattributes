@@ -1,0 +1,5 @@
+# LF everywhere, so files are identical on every computer and scripts run on Linux
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf

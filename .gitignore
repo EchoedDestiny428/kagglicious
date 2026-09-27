@@ -1,0 +1,19 @@
+# Data and outputs stay on each machine
+data/
+runs/
+
+# Secrets and per-machine settings
+kaggle.json
+.env
+.env.*
+!.env.example
+config.local.*
+
+# Python and notebooks
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Backups (git history replaces them)
+*.bak
+*.bak_*
