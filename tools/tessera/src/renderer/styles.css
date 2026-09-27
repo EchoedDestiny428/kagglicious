@@ -455,15 +455,16 @@ button {
   font-size: 12px;
 }
 
+/* Always visible (quiet until the tile is hovered), so closing an agent is easy to find. */
 .tile-close {
   width: 24px;
   height: 24px;
-  opacity: 0;
+  color: var(--text-3);
 }
 
 .tile:hover .tile-close,
 .tile:focus-within .tile-close {
-  opacity: 1;
+  color: var(--text-2);
 }
 
 .tile-close svg {
