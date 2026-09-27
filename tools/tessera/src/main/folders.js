@@ -6,7 +6,8 @@ import path from 'node:path';
 export const MAX_SUBFOLDERS = 64;
 export const MAX_ENTRIES = 2000;
 
-// Hidden folders (.git, .venv, ...) and generated ones are never projects.
+// Hidden folders (.git, .venv), folders starting with "_" (templates, scratch)
+// and generated ones are never projects.
 const SKIP_SUBFOLDERS = new Set(['node_modules', '__pycache__']);
 // Never useful in the file tree.
 const SKIP_ENTRIES = new Set(['.git', '.DS_Store', 'Thumbs.db', 'desktop.ini']);
@@ -26,7 +27,7 @@ function isDirEntry(dir, e) {
 export function listSubfolders(dir) {
   const out = [];
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (e.name.startsWith('.') || SKIP_SUBFOLDERS.has(e.name)) continue;
+    if (e.name.startsWith('.') || e.name.startsWith('_') || SKIP_SUBFOLDERS.has(e.name)) continue;
     if (isDirEntry(dir, e)) out.push(path.join(dir, e.name));
   }
   out.sort((a, b) => collator.compare(path.basename(a), path.basename(b)));

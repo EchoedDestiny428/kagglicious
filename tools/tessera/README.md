@@ -21,7 +21,8 @@ npm test       # unit tests (node:test)
 - **Open folder**. The orchestrator, a Claude session in the folder itself, opens in the sidebar on the
   right. Click the folder name to switch to a recent folder.
 - **Open subfolder** starts an agent (a Claude session) in one subfolder. **Open all subfolders** starts
-  one in each (hidden folders and `node_modules` are skipped). Each agent is a live tile.
+  one in each (hidden folders, folders starting with `_` and `node_modules` are skipped). Each agent
+  is a live tile.
 - **Click a tile** to zoom in: a file tree on the left, the agent in the middle. Rest the pointer on the
   right edge and a terminal in that folder slides in. It stays loaded while the view is open and is
   closed with it. Clicking a file in the tree adds `@path` to the agent's prompt (right-click: Open).

@@ -26,7 +26,7 @@ test('transcript lookup', () => {
 
 test('subfolders: sorted naturally, hidden and generated folders skipped, files ignored', () => {
   const root = tempDir('tessera-folders-');
-  for (const d of ['beta', 'Alpha', 'v10', 'v2', '.git', '.venv', 'node_modules', '__pycache__']) fs.mkdirSync(path.join(root, d));
+  for (const d of ['beta', 'Alpha', 'v10', 'v2', '.git', '.venv', 'node_modules', '__pycache__', '_template']) fs.mkdirSync(path.join(root, d));
   fs.writeFileSync(path.join(root, 'notes.txt'), 'x');
   assert.deepEqual(listSubfolders(root).map((p) => path.basename(p)), ['Alpha', 'beta', 'v2', 'v10']);
   assert.ok(listSubfolders(root).every((p) => path.isAbsolute(p)));

@@ -26,7 +26,8 @@ moves from kaggle-lab to here only once the competition has ended.
   runs/                  outputs (replays, logs, weights) not in git
 ```
 
-Start a new competition by copying `_template/` in kaggle-lab to `<slug>/`.
+Start a new competition by copying `_template/` in kaggle-lab to `<slug>/`. Folders starting with `_`
+are not competitions, and Tessera skips them.
 
 - **One name per file.** Working code keeps its name. Git history and tags are the versions, not
   `agent_v4.py`, `v5/` or `.bak_<date>` copies.
