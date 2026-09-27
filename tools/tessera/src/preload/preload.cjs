@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld('tessera', {
 
   setPrefs: (patch) => ipcRenderer.invoke('prefs:set', patch),
   setTheme: (theme) => ipcRenderer.invoke('theme:set', theme),
+  setStartAtLogin: (on) => ipcRenderer.invoke('login:set', on),
   openConfig: () => ipcRenderer.invoke('config:open'),
 
   menu: (items) => ipcRenderer.invoke('menu:popup', items),

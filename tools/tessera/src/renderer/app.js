@@ -26,7 +26,8 @@ const state = {
   agents: [], // [{ pane, tile, slot }] in the order they were opened
   ui: {},
   terminal: { fontSize: 13, scrollback: 10000, fontFamily: '' },
-  claude: { model: '', effort: '', permissionMode: '' },
+  claude: { model: '', effort: '', permissionMode: '', remoteControl: false },
+  startAtLogin: null, // null where the system has no login items
   orchestratorPrefs: { checkIns: false, checkInterval: 5 },
   theme: api.initialTheme,
   windowsBuild: 0,
@@ -135,6 +136,7 @@ function applyState(s) {
   }
   if (s.jobs) jobs.update(s.jobs);
   if (s.claude) state.claude = s.claude;
+  if ('startAtLogin' in s) state.startAtLogin = s.startAtLogin;
   if (s.orchestrator) state.orchestratorPrefs = s.orchestrator;
   renderCheckIns();
 }
@@ -576,11 +578,16 @@ function showSettings(anchor) {
     ...state.claude,
     checkInterval: state.orchestratorPrefs.checkInterval,
     notifications: state.ui.notifications !== false,
+    startAtLogin: state.startAtLogin,
     fontSize: state.terminal.fontSize,
   }, {
     onChange: async (patch) => {
       if ('fontSize' in patch) {
         changeFontSize(patch.fontSize - state.terminal.fontSize);
+        return;
+      }
+      if ('startAtLogin' in patch) {
+        state.startAtLogin = await api.setStartAtLogin(patch.startAtLogin);
         return;
       }
       applyState(await api.setPrefs(patch));

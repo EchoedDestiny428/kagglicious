@@ -12,9 +12,12 @@ Needs Node 20+ and the `claude` CLI on your PATH.
 
 ```sh
 npm install
-npm start      # build the page and open the app
-npm test       # unit tests (node:test)
+npm start          # build the page and open the app
+npm run shortcut   # add Tessera to the Start menu (Linux: applications menu)
+npm test           # unit tests (node:test)
 ```
+
+The shortcut runs the current source: Tessera rebuilds the page on launch if a file changed.
 
 ## Use
 
@@ -34,9 +37,9 @@ npm test       # unit tests (node:test)
   is not on GitHub yet. The folder menu then offers **Sync now**, and quitting offers **Sync and quit**.
 - Tessera saves each folder's orchestrator and agents. Next launch it reopens the last folder, and every
   session resumes its own conversation.
-- **Settings** (gear, top right): model, effort and permission mode for every Claude session, the
-  check-in interval, notifications, and font size. Model, effort and permissions apply to sessions started (or
-  resumed) afterwards.
+- **Settings** (gear, top right): model, effort and permission mode for every Claude session, Remote
+  Control, the check-in interval, notifications, start at login, and font size. Model, effort,
+  permissions and Remote Control apply to sessions started (or resumed) afterwards.
 - Drag the sidebar's left edge to resize it. Day / night switch in the top right.
 
 Shortcuts (Cmd instead of Ctrl on macOS):
@@ -54,6 +57,17 @@ Shortcuts (Cmd instead of Ctrl on macOS):
 
 In a terminal, Ctrl+C copies when text is selected and interrupts otherwise. Ctrl+V pastes, and
 Shift+Enter adds a new line to Claude's prompt. Drop files onto a terminal to paste their paths.
+
+## Leaving it running (e.g. on a home PC)
+
+- Turn on **Start at login** in Settings, and set Windows to never sleep. After a restart Tessera
+  reopens the folder and every session resumes its conversation.
+- **Remote Control** (Settings) starts every session with Claude Code's `--remote-control`: each one
+  prints a claude.ai link, and appears in the Claude app on your phone, named after its folder. Talk to
+  the orchestrator from there and it directs the agents at home. A session keeps Remote Control when it
+  is resumed later; run `/remote-control` in it to turn it off.
+- For the whole Tessera window from another computer, use a remote-desktop app such as Chrome Remote
+  Desktop (Windows Home can't host Remote Desktop).
 
 ## The orchestrator
 

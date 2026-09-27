@@ -11,7 +11,8 @@
     "start": "node build.mjs && electron .",
     "watch": "node build.mjs --watch",
     "test": "node --test test/*.test.js",
-    "dist": "node build.mjs && electron-builder --publish never"
+    "dist": "node build.mjs && electron-builder --publish never",
+    "shortcut": "node build.mjs && electron . --create-shortcut"
   },
   "dependencies": {
     "node-pty": "^1.1.0"

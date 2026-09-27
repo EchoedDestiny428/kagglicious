@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { ConfigStore, folderKey } from './config.js';
 import { ControlServer } from './control.js';
+import { APP_ID, createShortcut, getStartAtLogin, rebuildIfStale, setStartAtLogin } from './desktop.js';
 import { isInside, listDir, listSubfolders } from './folders.js';
 import { runSync, syncRoot, syncStatus, unsynced } from './gitsync.js';
 import { jobsConfigured, JobsPoller } from './jobs.js';
@@ -38,7 +39,13 @@ const sync = { folder: null, root: null, lastFetch: 0, running: false }; // sync
 // ---------------------------------------------------------------------------
 // Startup
 
-if (!app.requestSingleInstanceLock()) {
+if (process.argv.includes('--create-shortcut')) {
+  // `npm run shortcut`: add the menu entry and exit.
+  app.whenReady().then(() => {
+    console.log(createShortcut(app, shell, ROOT));
+    app.exit(0);
+  });
+} else if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => {
@@ -46,7 +53,7 @@ if (!app.requestSingleInstanceLock()) {
     if (win.isMinimized()) win.restore();
     win.focus();
   });
-  if (PLATFORM === 'win32') app.setAppUserModelId('dev.tessera.app');
+  if (PLATFORM === 'win32') app.setAppUserModelId(APP_ID);
   app.whenReady().then(start);
 }
 
@@ -59,6 +66,13 @@ function configPath() {
 
 async function start() {
   if (PLATFORM === 'darwin' && app.isPackaged) await adoptLoginShellPath();
+  if (!app.isPackaged) {
+    try {
+      rebuildIfStale(ROOT);
+    } catch (err) {
+      dialog.showErrorBox('Tessera', `Could not build the page: ${err.message}\nRun: npm run build`);
+    }
+  }
 
   store = new ConfigStore(configPath());
   store.load();
@@ -147,6 +161,8 @@ function createWindow() {
     minHeight: 460,
     show: false,
     title: 'Tessera',
+    // A packaged build carries its icon; from source, use the one in build/.
+    ...(!app.isPackaged && PLATFORM !== 'darwin' ? { icon: path.join(ROOT, 'build', 'icon.png') } : {}),
     backgroundColor: colors.bg,
     titleBarStyle: 'hidden',
     ...(PLATFORM === 'darwin'
@@ -332,7 +348,8 @@ function publicState() {
     recent: c.recent.map((p) => ({ path: p, exists: isDir(p) })),
     terminal: c.terminal,
     ui: c.ui,
-    claude: { model: c.claude.model, effort: c.claude.effort, permissionMode: c.claude.permissionMode },
+    claude: { model: c.claude.model, effort: c.claude.effort, permissionMode: c.claude.permissionMode, remoteControl: c.claude.remoteControl },
+    startAtLogin: getStartAtLogin(app, ROOT),
     orchestrator: c.orchestrator,
     jobs: poller.state,
   };
@@ -498,12 +515,13 @@ function registerIpc() {
       if ('notifications' in patch) c.ui.notifications = patch.notifications;
       if ('orchestratorWidth' in patch) c.ui.orchestratorWidth = patch.orchestratorWidth;
       if ('fontSize' in patch) c.terminal.fontSize = patch.fontSize;
-      for (const k of ['model', 'effort', 'permissionMode']) if (k in patch) c.claude[k] = patch[k];
+      for (const k of ['model', 'effort', 'permissionMode', 'remoteControl']) if (k in patch) c.claude[k] = patch[k];
       if ('checkIns' in patch) c.orchestrator.checkIns = patch.checkIns;
       if ('checkInterval' in patch) c.orchestrator.checkInterval = patch.checkInterval;
     });
     return publicState();
   });
+  handle('login:set', (on) => setStartAtLogin(app, ROOT, on === true));
   handle('config:open', async () => {
     if (!fs.existsSync(store.file)) store.flush();
     return (await shell.openPath(store.file)) || null;
@@ -582,7 +600,8 @@ function spawnPane(req) {
   const env = paneEnv(req.paneId);
   let launch;
   try {
-    launch = buildCommand({ role, session: sess, hooksFile: control ? hooksFile : null }, store.config, env);
+    const remoteName = role === 'orchestrator' ? `${path.basename(cwd)}-orchestrator` : path.basename(cwd);
+    launch = buildCommand({ role, session: sess, hooksFile: control ? hooksFile : null, remoteName }, store.config, env);
   } catch (err) {
     return { error: err.message };
   }

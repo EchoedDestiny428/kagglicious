@@ -6,7 +6,8 @@ const PERMISSIONS = [['', 'Default'], ['auto', 'Auto'], ['acceptEdits', 'Accept 
 const INTERVALS = [[2, 'Every 2 min'], [5, 'Every 5 min'], [10, 'Every 10 min'], [15, 'Every 15 min']];
 
 // Settings popover under the gear button.
-//   values: { model, effort, permissionMode, checkInterval, notifications, fontSize }
+//   values: { model, effort, permissionMode, remoteControl, checkInterval, notifications, startAtLogin, fontSize }
+//   (startAtLogin is null where the system does not support it)
 //   onChange(patch): a value changed
 //   onOpenConfig(): open config.local.json
 export function openSettings(anchor, values, { onChange, onOpenConfig }) {
@@ -48,18 +49,20 @@ export function openSettings(anchor, values, { onChange, onOpenConfig }) {
     return el;
   };
 
-  const row = (label, control) => h('label', { class: 'settings-row' }, h('span', { text: label }), control);
+  const row = (label, control, title) => h('label', { class: 'settings-row', title }, h('span', { text: label }), control);
   const panel = h('div', { class: 'settings', role: 'dialog', 'aria-label': 'Settings' },
     row('Model', select(MODELS, values.model, 'model')),
     row('Effort', select(EFFORTS, values.effort, 'effort')),
     row('Permissions', select(PERMISSIONS, values.permissionMode, 'permissionMode')),
+    row('Remote Control', toggle(values.remoteControl, 'remoteControl'), 'Continue sessions from the Claude app or claude.ai'),
     row('Check-ins', select(INTERVALS, values.checkInterval, 'checkInterval', Number)),
     row('Notifications', toggle(values.notifications, 'notifications')),
+    values.startAtLogin === null ? null : row('Start at login', toggle(values.startAtLogin, 'startAtLogin')),
     row('Font size', h('div', { class: 'stepper' },
       iconButton('minus', 'Smaller', () => step(-1)),
       sizeText,
       iconButton('plus', 'Larger', () => step(1)))),
-    h('p', { class: 'settings-note', text: 'Model, effort and permissions apply to sessions started from now on.' }),
+    h('p', { class: 'settings-note', text: 'Model, effort, permissions and Remote Control apply to new sessions.' }),
     h('button', { class: 'settings-link', type: 'button', onClick: () => onOpenConfig() }, 'Edit config file', icon('chevronRight', 13)));
 
   const close = () => {

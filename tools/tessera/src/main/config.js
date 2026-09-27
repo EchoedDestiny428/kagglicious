@@ -10,7 +10,7 @@ export const DEFAULTS = Object.freeze({
   recent: [], // recently opened folders, newest first
   sessions: {}, // folder key -> { orchestrator, agents } saved for that folder
   // model / effort / permissionMode: '' leaves Claude Code's own default.
-  claude: { command: 'claude', args: [], model: '', effort: '', permissionMode: '', resumeOnRestore: true, orchestration: true },
+  claude: { command: 'claude', args: [], model: '', effort: '', permissionMode: '', remoteControl: false, resumeOnRestore: true, orchestration: true },
   orchestrator: { checkIns: false, checkInterval: 5 }, // minutes between progress check-ins
   shell: { command: '', args: [] }, // terminal in the zoomed view; empty = platform default
   terminal: { fontSize: 13, scrollback: 10000, fontFamily: '' },
@@ -111,6 +111,7 @@ export function sanitize(raw, platform = process.platform) {
         model: typeof claude.model === 'string' && MODEL_RE.test(claude.model) ? claude.model : '',
         effort: EFFORTS.includes(claude.effort) ? claude.effort : '',
         permissionMode: PERMISSION_MODES.includes(claude.permissionMode) ? claude.permissionMode : '',
+        remoteControl: bool(claude.remoteControl, false),
         resumeOnRestore: bool(claude.resumeOnRestore, DEFAULTS.claude.resumeOnRestore),
         orchestration: bool(claude.orchestration, DEFAULTS.claude.orchestration),
       },

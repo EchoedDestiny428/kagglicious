@@ -61,3 +61,18 @@ test('claude sessions get the hooks file, unless claude.args has its own --setti
   const own = sanitize({ claude: { command: process.execPath, args: ['--settings', 'mine.json'] } }).config;
   assert.ok(!text(buildCommand({ role: 'agent', hooksFile: '/tmp/hooks.json' }, own, env)).includes('/tmp/hooks.json'));
 });
+
+test('Remote Control adds the flag and a readable name prefix, only when enabled', () => {
+  const env = { PATH: '' };
+  const text = (c) => JSON.stringify(c);
+  const on = sanitize({ claude: { command: process.execPath, remoteControl: true } }).config;
+  const off = sanitize({ claude: { command: process.execPath } }).config;
+  const cmd = text(buildCommand({ role: 'agent', remoteName: 'my repo/fib!' }, on, env));
+  assert.ok(cmd.includes('"--remote-control-session-name-prefix","my-repo-fib"'), cmd);
+  assert.ok(cmd.includes('"--remote-control"'));
+  assert.ok(!text(buildCommand({ role: 'agent', remoteName: 'fib' }, off, env)).includes('--remote-control'));
+  const shell = sanitize({ claude: { remoteControl: true }, shell: { command: process.execPath } }).config;
+  assert.ok(!text(buildCommand({ role: 'shell', remoteName: 'fib' }, shell, env)).includes('--remote-control'));
+  const own = sanitize({ claude: { command: process.execPath, remoteControl: true, args: ['--remote-control', 'mine'] } }).config;
+  assert.equal(text(buildCommand({ role: 'agent', remoteName: 'fib' }, own, env)).match(/--remote-control/g).length, 1);
+});

@@ -5,6 +5,7 @@
     "model": "",
     "effort": "",
     "permissionMode": "",
+    "remoteControl": false,
     "resumeOnRestore": true,
     "orchestration": true
   },
