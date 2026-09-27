@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sanitize } from '../src/main/config.js';
-import { settingFlags } from '../src/main/launch.js';
+import { buildCommand, roleSettings, settingFlags } from '../src/main/launch.js';
 import { checkInMessage, DONE_AFTER_IDLE_MS, TaskWatch } from '../src/renderer/checkins.js';
 
 const MIN = 60000;
@@ -74,14 +74,35 @@ test('check-in message is one line and says what to do', () => {
 });
 
 test('settings become claude flags and replace the same flags in claude.args', () => {
-  const claude = sanitize({ claude: { model: 'opus', effort: 'max', permissionMode: 'plan' } }).config.claude;
+  const claude = sanitize({ claude: { agent: { model: 'opus', effort: 'max' }, permissionMode: 'plan' } }).config.claude;
   assert.deepEqual(
-    settingFlags(claude, ['--model', 'sonnet', '--permission-mode=auto', '--verbose']),
+    settingFlags(roleSettings(claude, 'agent'), ['--model', 'sonnet', '--permission-mode=auto', '--verbose']),
     ['--verbose', '--model', 'opus', '--effort', 'max', '--permission-mode', 'plan'],
   );
   const none = sanitize({}).config.claude;
-  assert.deepEqual(settingFlags(none, ['--model', 'sonnet']), ['--model', 'sonnet'], 'empty settings leave args alone');
+  assert.deepEqual(settingFlags(roleSettings(none, 'agent'), ['--model', 'sonnet']), ['--model', 'sonnet'], 'empty settings leave args alone');
   assert.equal(sanitize({ claude: { permissionMode: 'bypassPermissions' } }).config.claude.permissionMode, '');
-  assert.equal(sanitize({ claude: { model: 'opus; rm -rf /' } }).config.claude.model, '');
+  assert.equal(sanitize({ claude: { agent: { model: 'opus; rm -rf /' } } }).config.claude.agent.model, '');
   assert.equal(sanitize({ orchestrator: { checkInterval: 0 } }).config.orchestrator.checkInterval, 1);
+});
+
+test('the orchestrator and the agents have their own model and effort', () => {
+  const claude = sanitize({ claude: { orchestrator: { model: 'opus', effort: 'max' }, agent: { model: 'sonnet', effort: 'high' } } }).config.claude;
+  assert.deepEqual(roleSettings(claude, 'orchestrator'), { model: 'opus', effort: 'max', permissionMode: '' });
+  assert.deepEqual(roleSettings(claude, 'agent'), { model: 'sonnet', effort: 'high', permissionMode: '' });
+  const config = sanitize({ claude: { command: process.execPath, orchestrator: claude.orchestrator, agent: claude.agent } }).config;
+  const args = (role) => JSON.stringify(buildCommand({ role }, config, { PATH: '' }).args);
+  assert.ok(args('orchestrator').includes('"--model","opus","--effort","max"'));
+  assert.ok(args('agent').includes('"--model","sonnet","--effort","high"'));
+  // A config from before per-role settings: both roles start from the old values.
+  const old = sanitize({ claude: { model: 'opus', effort: 'high' } }).config.claude;
+  assert.deepEqual(old.orchestrator, { model: 'opus', effort: 'high' });
+  assert.deepEqual(old.agent, { model: 'opus', effort: 'high' });
+  assert.ok(!('model' in old) && !('effort' in old), 'the old keys are dropped');
+  assert.deepEqual(sanitize({ claude: { agent: { effort: 'huge' } } }).config.claude.agent, { model: '', effort: '' });
+});
+
+test('auto sync is on every 5 minutes unless set otherwise', () => {
+  assert.deepEqual(sanitize({}).config.sync, { auto: true, intervalMinutes: 5 });
+  assert.deepEqual(sanitize({ sync: { auto: false, intervalMinutes: 0 } }).config.sync, { auto: false, intervalMinutes: 1 });
 });

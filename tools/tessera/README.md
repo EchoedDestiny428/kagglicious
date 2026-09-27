@@ -38,11 +38,19 @@ The shortcut runs the current source: Tessera rebuilds the page on launch if a f
   notification says when a session needs you or finishes; click it to jump there.
 - **Sync dot**: in a repo with `sync.sh` (like kaggle-lab), a dot next to the folder name means work
   is not on GitHub yet. The folder menu then offers **Sync now**, and quitting offers **Sync and quit**.
+  **Auto sync** (Settings, on by default) runs `sync.sh` every 5 minutes when there is anything to sync,
+  committing as `wip: auto sync`. A failed sync (a conflict, or a file the pre-commit hook blocks) is
+  shown once.
 - Tessera saves each folder's orchestrator and agents. Next launch it reopens the last folder, and every
   session resumes its own conversation.
-- **Settings** (gear, top right): model, effort and permission mode for every Claude session, Remote
-  Control, the check-in interval, notifications, start at login, and font size. Model, effort,
-  permissions and Remote Control apply to sessions started (or resumed) afterwards.
+- **Settings** (gear, top right): model and effort for the orchestrator and for the agents (one row
+  each), Boost, permission mode, Remote Control, the check-in interval, notifications, auto sync, start
+  at login, and font size. Model, effort, permissions and Remote Control apply to sessions started (or
+  resumed) afterwards.
+- **Boost** (Settings): for the next 10 minutes, every prompt the orchestrator or an agent gets asks it
+  to think harder, the way Claude Code's `ultrathink` does for one prompt. The gear shows a dot while it
+  is on, and it switches itself off. It adds a note to each prompt through Tessera's prompt hook; it
+  does not change the effort setting, so nothing is written to Claude Code's settings.
 - Drag the sidebar's left edge to resize it. Day / night switch in the top right.
 
 Shortcuts (Cmd instead of Ctrl on macOS):
@@ -99,8 +107,8 @@ stops, whether it finished or is waiting for input, and every few minutes while 
 orchestrator then reviews the work and follows up without being asked. Check-ins are only sent while
 the orchestrator is idle and you are not in the middle of typing to it.
 
-**Rules** (the button in the orchestrator's header) edits `RULES.md` in the open folder, which is saved
-as you type. It is a good place for current issues ("never submit to Kaggle yourself", "run long jobs
+**Rules** (the button in the orchestrator's header) edits `RULES.md` in the open folder. It is saved as
+you type, when you close the editor, and when you quit or switch folders. It is a good place for current issues ("never submit to Kaggle yourself", "run long jobs
 in tmux"). New sessions get the rules in their system prompt. A session that is already running, or
 a resumed conversation that started under older rules, is sent the new rules as a `[tessera]` message
 once it is idle. Tessera remembers which rules each conversation has seen, so each one gets a change

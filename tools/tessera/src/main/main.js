@@ -36,7 +36,8 @@ let control = null;
 let watcher = null; // file-tree watch for the zoomed agent
 let hooksFile = null; // --settings file that makes claude report to Tessera
 let rulesWatcher = null; // RULES.md of the open folder
-const sync = { folder: null, root: null, lastFetch: 0, running: false }; // sync reminder state
+// Sync reminder and auto sync state for the open folder's repo.
+const sync = { folder: null, root: null, lastFetch: 0, running: false, lastAuto: Date.now(), autoError: null };
 
 // ---------------------------------------------------------------------------
 // Startup
@@ -218,7 +219,10 @@ function createWindow() {
     send('app:focus');
     refreshSync({ fetch: true });
   });
-  const syncTimer = setInterval(() => refreshSync(), 60000);
+  const syncTimer = setInterval(() => {
+    refreshSync();
+    autoSync();
+  }, 60000);
   win.on('closed', () => clearInterval(syncTimer));
 
   let confirming = false;
@@ -232,7 +236,11 @@ function createWindow() {
     e.preventDefault();
     if (confirming) return;
     confirming = true;
-    confirmQuit()
+    // The page saves what is still pending (the rules editor) first, so a
+    // sync before quitting includes it.
+    askPage('flush', {})
+      .catch(() => null)
+      .then(() => confirmQuit())
       .catch(() => true)
       .then((ok) => {
         confirming = false;
@@ -316,6 +324,33 @@ async function refreshSync({ fetch = false } = {}) {
   send('sync:state', status ? { enabled: true, running: sync.running, unsynced: unsynced(status), ...status } : { enabled: false });
 }
 
+// Every few minutes, sync the open folder's repo when it has anything to sync.
+// A failure is shown once; the same failure again stays quiet.
+async function autoSync() {
+  const { auto, intervalMinutes } = store.config.sync;
+  if (!auto || !sync.root || sync.running || quitting) return;
+  if (Date.now() - sync.lastAuto < intervalMinutes * 60000) return;
+  sync.lastAuto = Date.now();
+  const env = childEnv(process.env);
+  const root = sync.root;
+  const status = await syncStatus(root, { fetch: true, env });
+  if (!unsynced(status) || sync.running || sync.root !== root) return;
+  sync.running = true;
+  refreshSync();
+  let res;
+  try {
+    res = await runSync(root, env, 'wip: auto sync');
+  } finally {
+    sync.running = false;
+    refreshSync();
+  }
+  if (res.ok) sync.autoError = null;
+  else if (res.output !== sync.autoError) {
+    sync.autoError = res.output;
+    send('app:toast', `Auto sync failed. ${res.output}`, { sticky: true });
+  }
+}
+
 app.on('window-all-closed', () => app.quit());
 app.on('will-quit', () => {
   stopWatch();
@@ -356,7 +391,13 @@ function publicState() {
     recent: c.recent.map((p) => ({ path: p, exists: isDir(p) })),
     terminal: c.terminal,
     ui: c.ui,
-    claude: { model: c.claude.model, effort: c.claude.effort, permissionMode: c.claude.permissionMode, remoteControl: c.claude.remoteControl },
+    claude: {
+      orchestrator: c.claude.orchestrator,
+      agent: c.claude.agent,
+      permissionMode: c.claude.permissionMode,
+      remoteControl: c.claude.remoteControl,
+    },
+    autoSync: c.sync.auto,
     startAtLogin: getStartAtLogin(app, ROOT),
     rules: c.folder ? readRules(c.folder) : null,
     orchestrator: c.orchestrator,
@@ -526,7 +567,14 @@ function registerIpc() {
       if ('notifications' in patch) c.ui.notifications = patch.notifications;
       if ('orchestratorWidth' in patch) c.ui.orchestratorWidth = patch.orchestratorWidth;
       if ('fontSize' in patch) c.terminal.fontSize = patch.fontSize;
-      for (const k of ['model', 'effort', 'permissionMode', 'remoteControl']) if (k in patch) c.claude[k] = patch[k];
+      for (const k of ['permissionMode', 'remoteControl']) if (k in patch) c.claude[k] = patch[k];
+      // { orchestrator: { model?, effort? } } or { agent: { ... } }
+      for (const role of ['orchestrator', 'agent']) {
+        const values = patch[role];
+        if (!values || typeof values !== 'object') continue;
+        for (const k of ['model', 'effort']) if (typeof values[k] === 'string') c.claude[role][k] = values[k];
+      }
+      if ('autoSync' in patch) c.sync.auto = patch.autoSync === true;
       if ('checkIns' in patch) c.orchestrator.checkIns = patch.checkIns;
       if ('checkInterval' in patch) c.orchestrator.checkInterval = patch.checkInterval;
     });
@@ -534,7 +582,7 @@ function registerIpc() {
   });
   handle('login:set', (on) => setStartAtLogin(app, ROOT, on === true));
   handle('rules:get', () => ({ text: store.config.folder ? readRules(store.config.folder) : null, template: TEMPLATE }));
-  handle('rules:save', (text) => {
+  const saveRules = (text) => {
     const folder = store.config.folder;
     if (!folder || typeof text !== 'string' || text.length > MAX_RULES) return { error: 'Could not save the rules.' };
     try {
@@ -543,6 +591,11 @@ function registerIpc() {
     } catch (err) {
       return { error: `Could not save ${RULES_FILE}: ${err.code || err.message}` };
     }
+  };
+  handle('rules:save', saveRules);
+  // Synchronous, for a page that is unloading and cannot wait for an answer.
+  ipcMain.on('rules:save-sync', (e, text) => {
+    e.returnValue = fromUs(e) ? saveRules(text) : { error: 'Unexpected sender' };
   });
   handle('config:open', async () => {
     if (!fs.existsSync(store.file)) store.flush();

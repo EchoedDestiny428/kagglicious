@@ -9,11 +9,21 @@ export const DEFAULTS = Object.freeze({
   folder: null, // the open folder
   recent: [], // recently opened folders, newest first
   sessions: {}, // folder key -> { orchestrator, agents } saved for that folder
-  // model / effort / permissionMode: '' leaves Claude Code's own default.
-  claude: { command: 'claude', args: [], model: '', effort: '', permissionMode: '', remoteControl: false, resumeOnRestore: true, orchestration: true },
+  // model / effort per role, and permissionMode: '' leaves Claude Code's own default.
+  claude: {
+    command: 'claude',
+    args: [],
+    orchestrator: { model: '', effort: '' },
+    agent: { model: '', effort: '' },
+    permissionMode: '',
+    remoteControl: false,
+    resumeOnRestore: true,
+    orchestration: true,
+  },
   orchestrator: { checkIns: false, checkInterval: 5 }, // minutes between progress check-ins
   shell: { command: '', args: [] }, // terminal in the zoomed view; empty = platform default
   terminal: { fontSize: 13, scrollback: 10000, fontFamily: '' },
+  sync: { auto: true, intervalMinutes: 5 }, // commit, pull and push repos with sync.sh
   ui: { theme: null, orchestratorWidth: 460, notifications: true, confirmClose: true, confirmQuit: true },
   window: null,
   jobs: { host: '', command: '', intervalSeconds: 30, sshCommand: 'ssh', sshArgs: [] },
@@ -69,6 +79,19 @@ function sanitizeWindow(w) {
   return out;
 }
 
+const withoutKeys = (obj, keys) => Object.fromEntries(Object.entries(obj).filter(([k]) => !keys.includes(k)));
+
+// Model and effort for one role. Configs from before per-role settings had one
+// claude.model / claude.effort for every session; both roles start from those.
+function sanitizeRole(role, legacy) {
+  const src = isObj(role) ? role : { model: legacy.model, effort: legacy.effort };
+  return {
+    ...src,
+    model: typeof src.model === 'string' && MODEL_RE.test(src.model) ? src.model : '',
+    effort: EFFORTS.includes(src.effort) ? src.effort : '',
+  };
+}
+
 export function sanitize(raw, platform = process.platform) {
   const src = isObj(raw) ? raw : {};
   const warnings = [];
@@ -79,6 +102,7 @@ export function sanitize(raw, platform = process.platform) {
   const terminal = pick('terminal');
   const ui = pick('ui');
   const jobs = pick('jobs');
+  const sync = pick('sync');
 
   // The open folder is always the first recent one.
   const folder = typeof src.folder === 'string' && pathFor(platform).isAbsolute(src.folder)
@@ -105,11 +129,11 @@ export function sanitize(raw, platform = process.platform) {
       recent,
       sessions,
       claude: {
-        ...claude,
+        ...withoutKeys(claude, ['model', 'effort']),
         command: str(claude.command, DEFAULTS.claude.command).trim() || DEFAULTS.claude.command,
         args: strList(claude.args),
-        model: typeof claude.model === 'string' && MODEL_RE.test(claude.model) ? claude.model : '',
-        effort: EFFORTS.includes(claude.effort) ? claude.effort : '',
+        orchestrator: sanitizeRole(claude.orchestrator, claude),
+        agent: sanitizeRole(claude.agent, claude),
         permissionMode: PERMISSION_MODES.includes(claude.permissionMode) ? claude.permissionMode : '',
         remoteControl: bool(claude.remoteControl, false),
         resumeOnRestore: bool(claude.resumeOnRestore, DEFAULTS.claude.resumeOnRestore),
@@ -119,6 +143,11 @@ export function sanitize(raw, platform = process.platform) {
         ...orchestrator,
         checkIns: bool(orchestrator.checkIns, false),
         checkInterval: int(orchestrator.checkInterval, DEFAULTS.orchestrator.checkInterval, 1, 60),
+      },
+      sync: {
+        ...sync,
+        auto: bool(sync.auto, DEFAULTS.sync.auto),
+        intervalMinutes: int(sync.intervalMinutes, DEFAULTS.sync.intervalMinutes, 1, 120),
       },
       shell: { ...shell, command: str(shell.command, '').trim(), args: strList(shell.args) },
       terminal: {

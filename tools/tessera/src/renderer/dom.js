@@ -51,6 +51,12 @@ export function iconButton(name, title, onClick, extraClass = '') {
   return h('button', { class: `icon-btn ${extraClass}`.trim(), title, 'aria-label': title, type: 'button', onClick }, icon(name));
 }
 
+// Labelled on/off switch with a knob; the caller keeps aria-checked current.
+export function switchToggle(label, title, onClick) {
+  return h('button', { class: 'switch-toggle', type: 'button', role: 'switch', 'aria-checked': 'false', title, onClick },
+    h('span', { text: label }), h('span', { class: 'switch' }, h('span', { class: 'switch-knob' })));
+}
+
 export function basename(p) {
   const trimmed = p.replace(/[\\/]+$/, '');
   const parts = trimmed.split(/[\\/]/);

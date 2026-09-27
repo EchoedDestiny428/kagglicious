@@ -3,7 +3,7 @@ import '@fontsource-variable/geist-mono';
 import '@xterm/xterm/css/xterm.css';
 import './styles.css';
 import { checkInMessage, hookState, notificationText, rulesHash, rulesUpdateMessage, TaskWatch } from './checkins.js';
-import { basename, h, icon, iconButton, pathKey } from './dom.js';
+import { basename, h, icon, iconButton, pathKey, switchToggle } from './dom.js';
 import { JobsStrip } from './jobs-strip.js';
 import { RulesEditor } from './rules-editor.js';
 import { openSettings } from './settings.js';
@@ -27,7 +27,9 @@ const state = {
   agents: [], // [{ pane, tile, slot }] in the order they were opened
   ui: {},
   terminal: { fontSize: 13, scrollback: 10000, fontFamily: '' },
-  claude: { model: '', effort: '', permissionMode: '', remoteControl: false },
+  claude: { orchestrator: { model: '', effort: '' }, agent: { model: '', effort: '' }, permissionMode: '', remoteControl: false },
+  autoSync: true, // commit, pull and push the open folder's repo every few minutes
+  boost: false, // see BOOST_MINUTES
   startAtLogin: null, // null where the system has no login items
   rules: null, // RULES.md of the open folder, or null
   orchestratorPrefs: { checkIns: false, checkInterval: 5 },
@@ -43,6 +45,14 @@ let saveTimer = null;
 let rulesSeen = {};
 
 const key = (p) => pathKey(p, api.platform);
+
+// Boost (in Settings): for a few minutes, every prompt the orchestrator or an
+// agent gets asks it to think harder, through the prompt hook (like Claude
+// Code's "ultrathink"). It is not saved; it switches itself off.
+const BOOST_MINUTES = 10;
+const BOOST_CONTEXT = 'The user switched on Boost in Tessera, requesting deeper reasoning on this turn. ' +
+  'Reason as thoroughly as the task warrants.';
+let boostTimer = null;
 
 // ---------------------------------------------------------------------------
 // Window chrome
@@ -79,8 +89,7 @@ new ResizeObserver(() => layoutGrid()).observe(els.agents);
 
 // Orchestrator sidebar.
 const orchTitle = h('span', { class: 'side-title' });
-const checkInsBtn = h('button', { class: 'switch-toggle', type: 'button', role: 'switch', 'aria-checked': 'false', onClick: () => setCheckIns(!state.orchestratorPrefs.checkIns) },
-  h('span', { text: 'Check-ins' }), h('span', { class: 'switch' }, h('span', { class: 'switch-knob' })));
+const checkInsBtn = switchToggle('Check-ins', 'Tell the orchestrator how the agents it gave tasks to are doing', () => setCheckIns(!state.orchestratorPrefs.checkIns));
 const rulesBtn = h('button', { class: 'text-btn rules-btn', type: 'button', title: 'Rules for every session (RULES.md)', onClick: () => toggleRules() },
   icon('book', 14), h('span', { text: 'Rules' }));
 const orchHead = h('header', { class: 'side-head' }, icon('network', 15), h('span', { class: 'side-name', text: 'Orchestrator' }), orchTitle, rulesBtn, checkInsBtn);
@@ -152,6 +161,7 @@ function applyState(s) {
   if (s.jobs) jobs.update(s.jobs);
   if (s.claude) state.claude = s.claude;
   if ('startAtLogin' in s) state.startAtLogin = s.startAtLogin;
+  if ('autoSync' in s) state.autoSync = s.autoSync;
   if ('rules' in s) state.rules = s.rules;
   if (s.orchestrator) state.orchestratorPrefs = s.orchestrator;
   renderCheckIns();
@@ -616,6 +626,10 @@ function showSettings(anchor) {
     notifications: state.ui.notifications !== false,
     startAtLogin: state.startAtLogin,
     fontSize: state.terminal.fontSize,
+    autoSync: state.autoSync,
+    boost: state.boost,
+    boostMinutes: BOOST_MINUTES,
+    syncAvailable: state.sync.enabled,
   }, {
     onChange: async (patch) => {
       if ('fontSize' in patch) {
@@ -626,6 +640,10 @@ function showSettings(anchor) {
         state.startAtLogin = await api.setStartAtLogin(patch.startAtLogin);
         return;
       }
+      if ('boost' in patch) {
+        setBoost(patch.boost);
+        return;
+      }
       applyState(await api.setPrefs(patch));
     },
     onOpenConfig: async () => {
@@ -633,6 +651,16 @@ function showSettings(anchor) {
       if (err) toast(err);
     },
   });
+}
+
+function setBoost(on) {
+  state.boost = Boolean(on);
+  clearTimeout(boostTimer);
+  if (state.boost) boostTimer = setTimeout(() => setBoost(false), BOOST_MINUTES * 60000);
+  // The gear shows a dot while Boost is on.
+  settingsBtn.classList.toggle('boosted', state.boost);
+  settingsBtn.title = state.boost ? 'Settings (Boost on)' : 'Settings';
+  document.querySelector('.settings .boost-row .switch-toggle')?.setAttribute('aria-checked', String(state.boost));
 }
 
 // ---------------------------------------------------------------------------
@@ -830,6 +858,12 @@ function controlPane(id) {
 const control = {
   // For the quit prompt (asked by the main process, not the CLI).
   busy: () => allPanes().map(busyReason).filter(Boolean),
+  // Before quitting: save the rules being edited and the folder's sessions.
+  flush: async () => {
+    await rulesEditor.close();
+    if (saveTimer) saveNow();
+    return true;
+  },
   list: () => ({
     panes: allPanes().map((p) => ({
       id: p.id, name: p.role === 'orchestrator' ? basename(p.cwd) : p.label, role: p.role, cwd: p.cwd,
@@ -874,6 +908,8 @@ const control = {
       if (!routine) queueNotification(pane, 'stopped', message);
     } else if (what === 'prompt') {
       pane.clearNeedsInput();
+      // Not for Tessera's own messages (rules, check-ins).
+      if (state.boost && !pane.routineTurn) return { context: BOOST_CONTEXT };
     }
     return true;
   },
@@ -908,7 +944,7 @@ api.pty.onData((ptyId, data) => {
 });
 api.pty.onExit((ptyId, code) => paneForPty(ptyId)?.handleExit(code));
 api.onConfigChanged((s) => applyState(s));
-api.onToast((msg) => toast(msg));
+api.onToast((msg, opts) => toast(msg, { sticky: opts?.sticky === true }));
 api.onFocus(() => refreshSubfolders());
 api.rules.onChanged((text) => {
   if (rulesEditor.isOpen) rulesEditor.external(text);
@@ -931,6 +967,7 @@ api.onNotifyClick((paneId) => {
 });
 api.jobs.onUpdate((s) => jobs.update(s));
 window.addEventListener('beforeunload', () => {
+  rulesEditor.saveSync();
   if (saveTimer) saveNow();
 });
 

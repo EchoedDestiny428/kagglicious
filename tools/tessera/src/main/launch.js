@@ -167,10 +167,17 @@ export function stripFlags(args, flags, valued = flags) {
 export const stripSessionFlags = (args) =>
   stripFlags(args, ['--session-id', '--resume', '-r', '--continue', '-c', '--fork-session'], ['--session-id', '--resume', '-r']);
 
+// The Settings values for a role: its own model and effort, and the shared
+// permission mode.
+export function roleSettings(claude, role) {
+  const own = claude[role === 'orchestrator' ? 'orchestrator' : 'agent'] ?? {};
+  return { model: own.model ?? '', effort: own.effort ?? '', permissionMode: claude.permissionMode ?? '' };
+}
+
 // Model, effort and permission mode chosen in Settings, as claude flags.
 // A setting replaces the same flag in claude.args; an empty one leaves them.
-export function settingFlags(claude, args) {
-  const pairs = [['--model', claude.model], ['--effort', claude.effort], ['--permission-mode', claude.permissionMode]];
+export function settingFlags(values, args) {
+  const pairs = [['--model', values.model], ['--effort', values.effort], ['--permission-mode', values.permissionMode]];
   const set = pairs.filter(([, value]) => value);
   const out = stripFlags(args, set.map(([flag]) => flag));
   for (const [flag, value] of set) out.push(flag, value);
@@ -204,7 +211,7 @@ export function buildCommand({ role, session, hooksFile, remoteName, promptFile 
     args = shell.args.slice();
   } else {
     command = config.claude.command;
-    args = settingFlags(config.claude, stripSessionFlags(config.claude.args));
+    args = settingFlags(roleSettings(config.claude, role), stripSessionFlags(config.claude.args));
     if (session && UUID_RE.test(session.id)) args.push(session.resume ? '--resume' : '--session-id', session.id);
     if (hooksFile && !args.some((a) => a === '--settings' || a.startsWith('--settings='))) args.push('--settings', hooksFile);
     if (config.claude.remoteControl && !args.some((a) => a.startsWith('--remote-control'))) {

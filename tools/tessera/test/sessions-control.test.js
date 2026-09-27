@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { spawn } from 'node:child_process';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -66,6 +67,39 @@ test('control server requires the token and relays commands', async () => {
     assert.deepEqual(await ask(server.address, { token: server.token, cmd: 'list', args: { a: 1 }, from: '3' }), { ok: true, result: { echoed: { a: 1 } } });
     assert.deepEqual(seen, [{ cmd: 'list', args: { a: 1 }, from: '3' }]);
     assert.deepEqual(await ask(server.address, { token: server.token, cmd: 'boom' }), { error: 'nope' });
+  } finally {
+    server.stop();
+  }
+});
+
+// Runs `tessera hook` the way Claude Code does: the event on stdin, output on stdout.
+function runHook(server, event) {
+  return new Promise((resolve, reject) => {
+    const cli = path.join(import.meta.dirname, '..', 'src', 'cli', 'tessera.mjs');
+    const child = spawn(process.execPath, [cli, 'hook'], {
+      env: { ...process.env, TESSERA_SOCKET: server.address, TESSERA_TOKEN: server.token, TESSERA_PANE: '2' },
+    });
+    let out = '';
+    child.stdout.on('data', (d) => (out += d));
+    child.on('error', reject);
+    child.on('close', (code) => resolve({ code, out }));
+    child.stdin.end(JSON.stringify(event));
+  });
+}
+
+test('the prompt hook adds Boost context only when Tessera answers with some', async () => {
+  const server = new ControlServer({
+    handle: (cmd, args) => (args.event === 'UserPromptSubmit' && args.sessionId === 'boosted' ? { context: 'Think harder.' } : true),
+  });
+  await server.start();
+  try {
+    const boosted = await runHook(server, { hook_event_name: 'UserPromptSubmit', session_id: 'boosted', prompt: 'hi' });
+    assert.equal(boosted.code, 0);
+    assert.deepEqual(JSON.parse(boosted.out), { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: 'Think harder.' } });
+    const plain = await runHook(server, { hook_event_name: 'UserPromptSubmit', session_id: 'other', prompt: 'hi' });
+    assert.deepEqual(plain, { code: 0, out: '' });
+    const stop = await runHook(server, { hook_event_name: 'Stop', session_id: 'boosted' });
+    assert.deepEqual(stop, { code: 0, out: '' });
   } finally {
     server.stop();
   }

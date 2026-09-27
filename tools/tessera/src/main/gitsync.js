@@ -64,10 +64,11 @@ export function findShell(env = process.env, platform = process.platform, exists
   return candidates.find((c) => exists(c)) ?? null;
 }
 
-export async function runSync(root, env = process.env) {
+// message: the commit message for uncommitted changes (sync.sh's default if omitted).
+export async function runSync(root, env = process.env, message = '') {
   const sh = findShell(env);
   if (!sh) return { ok: false, output: 'Could not find sh (it comes with Git for Windows).' };
-  const res = await run(sh, [path.join(root, 'sync.sh')], { cwd: root, timeout: SYNC_TIMEOUT, env: gitEnv(env) });
+  const res = await run(sh, [path.join(root, 'sync.sh'), ...(message ? [message] : [])], { cwd: root, timeout: SYNC_TIMEOUT, env: gitEnv(env) });
   const output = `${res.stdout}${res.stderr}`.trim();
   return { ok: res.ok, output: output || (res.ok ? 'Up to date.' : 'Sync failed.') };
 }

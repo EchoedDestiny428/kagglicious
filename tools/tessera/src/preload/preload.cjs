@@ -61,6 +61,7 @@ contextBridge.exposeInMainWorld('tessera', {
   rules: {
     get: () => ipcRenderer.invoke('rules:get'),
     save: (text) => ipcRenderer.invoke('rules:save', text),
+    saveSync: (text) => ipcRenderer.sendSync('rules:save-sync', text),
     onChanged: listen('rules:changed'),
   },
   openConfig: () => ipcRenderer.invoke('config:open'),

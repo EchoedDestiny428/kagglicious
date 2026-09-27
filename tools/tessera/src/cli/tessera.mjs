@@ -166,20 +166,27 @@ const commands = {
   // Not for people: Claude Code runs this from the hooks Tessera gives it
   // (the JSON event arrives on stdin). It must stay quiet and never fail,
   // or Claude would show hook errors.
+  // For a prompt, Tessera may answer with context to add to it (Boost).
   async hook() {
+    let out = '';
     try {
       const raw = await Promise.race([readStdin(), sleep(3000).then(() => '')]);
       const e = JSON.parse(raw || '{}');
-      await request('hook', {
-        event: String(e.hook_event_name ?? ''),
+      const event = String(e.hook_event_name ?? '');
+      const res = await request('hook', {
+        event,
         type: String(e.notification_type ?? ''),
         message: String(e.message ?? e.last_assistant_message ?? '').replace(/\s+/g, ' ').trim().slice(0, 300),
         sessionId: String(e.session_id ?? ''),
       });
+      if (event === 'UserPromptSubmit' && typeof res?.context === 'string' && res.context) {
+        out = JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: res.context } });
+      }
     } catch {
       // Tessera closed, or not inside Tessera: nothing to report to.
     }
-    process.exit(0);
+    if (out) process.stdout.write(out, () => process.exit(0));
+    else process.exit(0);
   },
 };
 

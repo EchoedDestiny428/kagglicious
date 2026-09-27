@@ -207,6 +207,22 @@ button {
 }
 
 /* Unsynced changes: a small dot after the folder name */
+/* Dot on the Settings gear while Boost is on. */
+.topbar-btn.boosted {
+  position: relative;
+}
+
+.topbar-btn.boosted::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text);
+}
+
 .sync-dot {
   width: 6px;
   height: 6px;
@@ -958,7 +974,7 @@ body.resizing .xterm {
 .settings {
   position: fixed;
   z-index: 40;
-  width: 300px;
+  width: 392px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -985,6 +1001,17 @@ body.resizing .xterm {
   position: relative;
   display: inline-flex;
   align-items: center;
+}
+
+/* Model and effort for a role, side by side. */
+.select-pair {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.select-pair .select-input {
+  min-width: 0;
+  width: 134px;
 }
 
 .select-input {
