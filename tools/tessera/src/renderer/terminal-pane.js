@@ -435,6 +435,18 @@ export class TerminalPane {
     this.onInput('\r');
   }
 
+  // The last `n` lines up to the last non-blank one (blank rows under the
+  // content are skipped), as they are, oldest first.
+  bottomLines(n) {
+    const buf = this.term.buffer.active;
+    const line = (i) => buf.getLine(i)?.translateToString(true) ?? '';
+    let end = buf.length;
+    while (end > 0 && !line(end - 1).trim()) end--;
+    const out = [];
+    for (let i = Math.max(0, end - n); i < end; i++) out.push(line(i));
+    return out;
+  }
+
   // The last `lines` non-blank lines, newest at the bottom. Runs of blank
   // lines are squeezed to one: full-screen apps like claude leave most of
   // the screen empty between the conversation and the input box.

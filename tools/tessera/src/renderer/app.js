@@ -2,7 +2,7 @@ import '@fontsource-variable/geist';
 import '@fontsource-variable/geist-mono';
 import '@xterm/xterm/css/xterm.css';
 import './styles.css';
-import { checkInMessage, hookState, notificationText, rulesHash, rulesUpdateMessage, settingCommands, TaskWatch } from './checkins.js';
+import { backgroundWork, checkInMessage, excerpt, hookState, notificationText, rulesHash, rulesUpdateMessage, settingCommands, TaskWatch } from './checkins.js';
 import { basename, h, icon, iconButton, pathKey, switchToggle } from './dom.js';
 import { JobsStrip } from './jobs-strip.js';
 import { RulesEditor } from './rules-editor.js';
@@ -250,8 +250,11 @@ function renderView() {
 // Each row's state text (the dot, title and needs-you ring follow the pane by themselves).
 function renderRows() {
   if (!listView()) return;
-  for (const { pane, rowState } of state.agents) rowState.textContent = agentStateText(pane.controlState, pane.idleSeconds);
+  for (const { pane, rowState } of state.agents) rowState.textContent = agentStateText(pane.controlState, pane.idleSeconds, background(pane));
 }
+
+// Background work (shells, monitors) Claude shows under a session's input box.
+const background = (pane) => (pane.status === 'running' ? backgroundWork(pane.bottomLines(12)) : '');
 
 // Where the zoomed view grows from: the agent's tile, or its row in the list.
 const zoomOrigin = (agent) => (listView() ? agent.row : agent.tile);
@@ -534,9 +537,10 @@ function busyReason(pane) {
   return null;
 }
 
-async function closeAgent(pane) {
+// confirm: false when asked through `tessera close`, which checks itself.
+async function closeAgent(pane, { confirm = true } = {}) {
   const reason = busyReason(pane);
-  if (reason && state.ui.confirmClose !== false) {
+  if (confirm && reason && state.ui.confirmClose !== false) {
     const { confirmed, checked } = await api.confirm({
       message: `Close ${pane.label}?`,
       detail: reason,
@@ -803,6 +807,8 @@ function tickCheckIns() {
     lastOutputAt: pane.lastOutputAt,
     stoppedAt: pane.stoppedAt,
     message: pane.needsInput ?? '',
+    report: excerpt(pane.lastMessage),
+    background: background(pane),
   }));
   const events = watch.check(agents, now, state.orchestratorPrefs.checkInterval * 60000);
   if (!state.orchestratorPrefs.checkIns) {
@@ -978,18 +984,40 @@ const control = {
   list: () => ({
     panes: allPanes().map((p) => ({
       id: p.id, name: p.role === 'orchestrator' ? basename(p.cwd) : p.label, role: p.role, cwd: p.cwd,
-      state: p.controlState, idle: p.idleSeconds, title: p.title,
+      state: p.controlState, idle: p.idleSeconds, title: p.title, background: background(p),
     })),
     checkIns: state.orchestratorPrefs.checkIns ? state.orchestratorPrefs.checkInterval : 0,
   }),
+  // id 'all': every running agent except the one asking. Returns the panes sent to.
   send: async ({ id, text }, from) => {
-    const pane = controlPane(id);
-    await pane.sendText(String(text));
-    if (fromOrchestrator(from) && pane.role === 'agent') {
-      watch.started(pane.id, Date.now());
-      pendingCheckIns.delete(pane.id);
+    const targets = id === 'all'
+      ? state.agents.map((a) => a.pane).filter((p) => p.status === 'running' && p.id !== String(from))
+      : [controlPane(id)];
+    if (!targets.length) throw new Error('No agent is running.');
+    for (const pane of targets) {
+      await pane.sendText(String(text));
+      if (fromOrchestrator(from) && pane.role === 'agent') {
+        watch.started(pane.id, Date.now());
+        pendingCheckIns.delete(pane.id);
+      }
     }
-    return true;
+    return targets.map((p) => p.id);
+  },
+  // The agent's last reply in full, from its Stop hook. Without one (e.g. a
+  // conversation resumed after a restart) the main process reads the transcript.
+  last: ({ id }) => {
+    const pane = controlPane(id);
+    return { name: pane.label, text: pane.lastMessage ?? '', sessionId: pane.sessionId ?? null };
+  },
+  // Close an agent cleanly, as its × does. A busy one only with force.
+  close: async ({ id, force }, from) => {
+    const pane = controlPane(id);
+    if (pane.role !== 'agent') throw new Error('Only agents can be closed this way.');
+    if (pane.id === String(from)) throw new Error('A pane cannot close itself.');
+    const reason = busyReason(pane);
+    if (reason && !force) throw new Error(`${reason} Add --force to close it anyway.`);
+    await closeAgent(pane, { confirm: false });
+    return pane.label;
   },
   read: ({ id, lines }, from) => {
     const pane = controlPane(id);
@@ -1000,9 +1028,10 @@ const control = {
     return pane.readText(Math.min(2000, Math.max(1, Number(lines) || 60)));
   },
   // From the Claude Code hooks Tessera installs (via `tessera hook` in the pane).
-  hook: ({ event, type, message, sessionId }, from) => {
+  hook: ({ event, type, message, sessionId, last }, from) => {
     const pane = allPanes().find((p) => p.id === String(from));
     if (!pane) return false;
+    if (event === 'Stop' && typeof last === 'string' && last.trim()) pane.lastMessage = last;
     if (sessionId && sessionId !== pane.sessionId && /^[0-9a-f-]{36}$/i.test(sessionId)) {
       // /clear or /resume moved the pane to another conversation: resume that one next time.
       pane.sessionId = sessionId;

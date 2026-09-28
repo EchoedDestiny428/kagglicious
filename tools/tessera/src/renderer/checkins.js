@@ -38,7 +38,8 @@ export class TaskWatch {
     else task.lastNotifiedAt = now;
   }
 
-  // agents: [{ id, name, state, idleMs, lastOutputAt, stoppedAt, needsInput, message }]
+  // agents: [{ id, name, state, idleMs, lastOutputAt, stoppedAt, needsInput, message, report, background }]
+  //   report: the start of its last reply; background: backgroundWork() of its screen
   //   state: 'working' | 'idle' | 'needs-input' | 'starting' | 'exited' | 'error'
   //   stoppedAt: when its last turn ended (Stop hook), or 0
   // Returns [{ id, name, kind: 'stopped' | 'needs-input' | 'exited' | 'working', minutes, message? }].
@@ -60,7 +61,7 @@ export class TaskWatch {
         task.askedReported = true;
       } else if ((a.stoppedAt ?? 0) > task.startedAt ||
         (a.state === 'idle' && !a.stoppedAt && a.lastOutputAt > task.startedAt && a.idleMs >= DONE_AFTER_IDLE_MS)) {
-        events.push({ ...base, kind: 'stopped' });
+        events.push({ ...base, kind: 'stopped', report: a.report || '', background: a.background || '' });
         this.tasks.delete(a.id);
       } else {
         task.askedReported = false;
@@ -78,20 +79,52 @@ export class TaskWatch {
   }
 }
 
-// One line (so Claude does not fold it into a pasted-text block).
+// One line (so Claude does not fold it into a pasted-text block). A finished
+// agent's event carries the start of its last reply (report) and any
+// background work still running.
 export function checkInMessage(events) {
   const parts = events.map((e) => {
     const who = `${e.name} (pane ${e.id})`;
     if (e.kind === 'exited') return `${who} has exited`;
-    if (e.kind === 'stopped') return `${who} has finished its turn`;
+    if (e.kind === 'stopped') {
+      const running = e.background ? ` (${e.background} still running, it will wake up when that finishes)` : '';
+      return `${who} has finished its turn${running}${e.report ? `, saying: "${e.report}"` : ''}`;
+    }
     if (e.kind === 'needs-input') return `${who} is waiting for an answer${e.message ? ` ("${e.message}")` : ''}`;
     return `${who} is still working (${e.minutes} min)`;
   });
   const news = events.some((e) => e.kind !== 'working');
   const ask = news
-    ? 'Review their work with `tessera read`, answer or follow up with `tessera send` if needed, and tell the user when everything is done.'
+    ? 'Read their full replies with `tessera last`, answer or follow up with `tessera send` if needed, and tell the user when everything is done.'
     : 'Glance at their progress with `tessera read` and step in only if something is stuck or going wrong.';
   return `[tessera] Check-in: ${parts.join('; ')}. ${ask}`;
+}
+
+// The start of a reply, on one line.
+export function excerpt(text, max = 200) {
+  const line = String(text ?? '').replace(/\s+/g, ' ').trim();
+  return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
+}
+
+// Background work Claude Code shows in its footer, under the input box's
+// bottom border ("manual mode on · 1 shell · ↓ to manage"): "1 shell",
+// "2 monitors", joined by ", ", or '' for none. Only the footer is read, so a
+// reply that mentions shells does not count. `lines`: the last screen lines,
+// oldest first.
+export function backgroundWork(lines) {
+  let footer = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (/^\s*─{4,}/.test(lines[i] ?? '')) {
+      footer = i + 1;
+      break;
+    }
+  }
+  if (footer < 0) return '';
+  const found = [];
+  for (const line of lines.slice(footer)) {
+    for (const m of String(line).matchAll(/(?:^|[\s·,])(\d+) (shells?|monitors?)(?=[\s·,]|$)/g)) found.push(`${m[1]} ${m[2]}`);
+  }
+  return found.join(', ');
 }
 
 // One desktop notification for several events that arrive together.

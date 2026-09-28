@@ -127,9 +127,10 @@ export const ORCHESTRATION_HINT =
   'You are the orchestrator in Tessera. Other Claude Code sessions ("agents") run in subfolders of this ' +
   'folder and are shown next to you. When the user asks you to delegate to, coordinate, check on, or start ' +
   'agents, use the `tessera` shell command (run `tessera help` first). Messages that start with [tessera] are ' +
-  'check-ins sent by Tessera, not by the user: they report on agents you gave tasks to. When one arrives, look ' +
-  'at those agents (`tessera read`), follow up or fix problems (`tessera send`), and tell the user once the ' +
-  'work is done.';
+  'check-ins sent by Tessera, not by the user: they report on agents you gave tasks to. When one arrives, read ' +
+  'those agents\' replies (`tessera last`, or their screens with `tessera read`), follow up or fix problems ' +
+  '(`tessera send`), and tell the user once the work is done. An agent listed as idle with a shell or monitor ' +
+  'running is waiting on it and wakes up by itself; plain idle means nothing is running for it.';
 
 // Given to every agent: where it sits, what the orchestrator needs from it,
 // and that Tessera's own messages (rule updates) are trusted like the user's,
@@ -191,9 +192,14 @@ export function settingFlags(values, args) {
 // Claude Code hooks that report to Tessera: when a session needs permission or
 // input (Notification), finishes a turn (Stop) or gets a new prompt
 // (UserPromptSubmit). Each runs `tessera hook`, which reads the event from stdin.
-export function hookSettings() {
+// Agents also get no prompt suggestions: the grey "next prompt" Claude Code
+// puts in the input box reads like a message that was sent when the
+// orchestrator reads the screen.
+export function hookSettings(role = 'orchestrator') {
   const run = [{ hooks: [{ type: 'command', command: 'tessera hook' }] }];
-  return { hooks: { Notification: run, Stop: run, UserPromptSubmit: run } };
+  const settings = { hooks: { Notification: run, Stop: run, UserPromptSubmit: run } };
+  if (role === 'agent') settings.promptSuggestionEnabled = false;
+  return settings;
 }
 
 //   hooksFile: path of a JSON file holding hookSettings(), passed as --settings

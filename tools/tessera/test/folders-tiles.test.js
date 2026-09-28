@@ -76,6 +76,8 @@ test('agentStateText is short and says how long an agent has been idle', () => {
   assert.equal(agentStateText('idle', 20), 'Idle');
   assert.equal(agentStateText('idle', 4 * 60 + 5), 'Idle 4m');
   assert.equal(agentStateText('idle', 3 * 3600), 'Idle 3h');
+  assert.equal(agentStateText('idle', 4 * 60, '1 shell'), 'Idle 4m · 1 shell', 'background work shows on idle agents');
+  assert.equal(agentStateText('working', 0, '1 shell'), 'Working');
   assert.equal(agentStateText('exited'), 'Exited');
   assert.equal(agentStateText('starting'), 'Starting');
 });
@@ -85,7 +87,7 @@ test('new subfolder names are checked before anything is created', () => {
   assert.equal(folderNameError('  spaced name  '), null, 'surrounding spaces are trimmed');
   assert.match(folderNameError(''), /Type a name/);
   assert.match(folderNameError('   '), /Type a name/);
-  for (const bad of ['a/b', 'a\b', '..', 'x:y', 'what?', 'tab\there']) assert.ok(folderNameError(bad), bad);
+  for (const bad of ['a/b', 'a\\b', '..', 'x:y', 'what?', 'tab\there']) assert.ok(folderNameError(bad), bad);
   assert.match(folderNameError('name.'), /end with a dot/);
   assert.match(folderNameError('CON'), /reserved/);
   assert.match(folderNameError('lpt1.txt'), /reserved/);

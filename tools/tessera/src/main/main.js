@@ -13,7 +13,7 @@ import { MAX_RULES, promptText, readRules, RULES_FILE, TEMPLATE, writeRules } fr
 import { jobsConfigured, JobsPoller } from './jobs.js';
 import { AGENT_HINT, buildCommand, childEnv, getEnv, hookSettings, ORCHESTRATION_HINT, UUID_RE } from './launch.js';
 import { PtyManager } from './ptys.js';
-import { hasTranscript } from './sessions.js';
+import { hasTranscript, lastReply } from './sessions.js';
 
 const ROOT = app.getAppPath();
 const PLATFORM = process.platform;
@@ -34,7 +34,7 @@ let ptys;
 let poller;
 let control = null;
 let watcher = null; // file-tree watch for the zoomed agent
-let hooksFile = null; // --settings file that makes claude report to Tessera
+let hooksFiles = {}; // role -> --settings file that makes claude report to Tessera
 let rulesWatcher = null; // RULES.md of the open folder
 const sync = { folder: null, root: null, lastFetch: 0 }; // sync reminder state
 
@@ -89,7 +89,7 @@ async function start() {
 
   poller = new JobsPoller({ getConfig: () => store.config, onUpdate: (state) => send('jobs:update', state) });
 
-  hooksFile = writeHooksFile();
+  hooksFiles = { orchestrator: writeHooksFile('orchestrator'), agent: writeHooksFile('agent') };
   control = new ControlServer({ handle: handleControl });
   try {
     await control.start();
@@ -614,7 +614,7 @@ function spawnPane(req) {
   try {
     const remoteName = role === 'orchestrator' ? `${path.basename(cwd)}-orchestrator` : path.basename(cwd);
     const promptFile = role === 'shell' ? null : writePromptFile(role);
-    launch = buildCommand({ role, session: sess, hooksFile: control ? hooksFile : null, remoteName, promptFile }, store.config, env);
+    launch = buildCommand({ role, session: sess, hooksFile: control ? hooksFiles[role] ?? null : null, remoteName, promptFile }, store.config, env);
   } catch (err) {
     return { error: err.message };
   }
@@ -651,7 +651,7 @@ function paneEnv(paneId) {
 // Requests from the `tessera` command. The page owns the panes, so most are
 // answered there.
 
-const CONTROL_COMMANDS = new Set(['list', 'send', 'read', 'open', 'hook']);
+const CONTROL_COMMANDS = new Set(['list', 'send', 'read', 'last', 'open', 'close', 'hook']);
 const controlWaiting = new Map();
 let controlSeq = 0;
 
@@ -665,15 +665,21 @@ ipcMain.on('control:reply', (e, id, error, result) => {
   else waiting.resolve(result);
 });
 
-function handleControl(cmd, args, from) {
+async function handleControl(cmd, args, from) {
   if (!CONTROL_COMMANDS.has(cmd)) throw new Error(`Unknown command "${cmd}".`);
   if (!args || typeof args !== 'object') throw new Error('Bad arguments.');
+  if (cmd === 'last') {
+    const res = await askPage('last', args, from);
+    const text = res?.text || (res?.sessionId ? lastReply(res.sessionId) : null);
+    return text || `${res?.name ?? 'This agent'} has not replied yet.`;
+  }
   if (cmd === 'open') {
     const cwd = typeof args.cwd === 'string' ? args.cwd : '';
     if (!path.isAbsolute(cwd) || !isDir(cwd)) throw new Error(`Folder not found: ${cwd}`);
   }
   if (cmd === 'send' && (typeof args.text !== 'string' || args.text.length > 100000)) throw new Error('Text is missing or too long.');
   if (cmd === 'hook' && typeof args.event !== 'string') throw new Error('Bad hook event.');
+  if (cmd === 'hook' && args.last !== undefined && (typeof args.last !== 'string' || args.last.length > 100000)) throw new Error('Bad hook event.');
   return askPage(cmd, args, from);
 }
 
@@ -693,11 +699,11 @@ function askPage(cmd, args, from = null) {
 }
 
 // The hooks file lives with the app's per-user data (never in the repo).
-function writeHooksFile() {
+function writeHooksFile(role) {
   try {
-    const file = path.join(app.getPath('userData'), 'claude-hooks.json');
+    const file = path.join(app.getPath('userData'), role === 'agent' ? 'claude-agent-settings.json' : 'claude-hooks.json');
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify(hookSettings(), null, 2));
+    fs.writeFileSync(file, JSON.stringify(hookSettings(role), null, 2));
     return file;
   } catch (err) {
     console.error('tessera: could not write the hooks file:', err.message);

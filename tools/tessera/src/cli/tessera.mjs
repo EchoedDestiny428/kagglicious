@@ -6,13 +6,17 @@ import path from 'node:path';
 
 const HELP = `Usage: tessera <command>
 
-  list                          The orchestrator and agents, with state (working / idle / exited)
+  list                          The orchestrator and agents, with state (working / idle / exited) and
+                                background work ("idle, 1 shell": it wakes up when that finishes)
   send <pane> <text>            Type text into a pane and press Enter ("-" reads stdin)
+  send all <text>               The same, to every running agent
+  last <pane>                   An agent's last reply in full (reports longer than the screen)
   read <pane> [--lines N]       Last N lines of a pane's screen (default 60)
   wait <pane>... [--idle S] [--timeout S]
                                 Wait until the panes have been quiet for S seconds (default 3);
                                 gives up after --timeout seconds (default 100, exit code 2)
   open [folder]                 Start an agent in a folder (default: this folder)
+  close <pane> [--force]        Close an agent cleanly; --force if it is working or waiting
 
 Panes are numbered as in "tessera list". Typical use: send tasks to agents, wait for them, then read.`;
 
@@ -103,11 +107,17 @@ const commands = {
   async list() {
     const { panes, checkIns } = await request('list');
     if (!panes.length) return console.log('No panes open.');
-    console.log(`${pad('pane', 6)}${pad('state', 10)}${pad('folder', 30)}title`);
+    const stateOf = (p) => (p.background ? `${p.state}, ${p.background}` : p.state);
+    const width = Math.max(10, ...panes.map((p) => stateOf(p).length + 2));
+    console.log(`${pad('pane', 6)}${pad('state', width)}${pad('folder', 30)}title`);
     for (const p of panes) {
       const you = p.id === self ? '   <- you' : '';
       const name = p.role === 'orchestrator' ? `${p.name} (orchestrator)` : p.name;
-      console.log(`${pad(p.id, 6)}${pad(p.state, 10)}${pad(name, 30)}${p.title}${you}`);
+      console.log(`${pad(p.id, 6)}${pad(stateOf(p), width)}${pad(name, 30)}${p.title}${you}`);
+    }
+    if (panes.some((p) => p.state === 'idle' && p.background)) {
+      console.log('\nAn idle agent with a shell or monitor running is waiting on it and wakes up when it finishes. ' +
+        'Plain "idle" means nothing is running for it.');
     }
     if (checkIns) {
       console.log(`\nCheck-ins are on: Tessera messages the orchestrator when an agent it gave a task to stops, ` +
@@ -117,14 +127,25 @@ const commands = {
 
   async send(argv) {
     const [target, ...words] = argv;
-    const id = paneArg(target);
+    const id = target === 'all' ? 'all' : paneArg(target);
     if (id === self) fail('that is this pane.');
     let text = words.join(' ');
     if (text === '-') text = await readStdin();
     text = text.replace(/\s+$/, '');
     if (!text) fail('nothing to send.');
-    await request('send', { id, text });
-    console.log(`Sent to pane ${id}.`);
+    const sent = await request('send', { id, text });
+    console.log(`Sent to pane${sent.length === 1 ? '' : 's'} ${sent.join(', ')}.`);
+  },
+
+  async last(argv) {
+    process.stdout.write(`${await request('last', { id: paneArg(argv[0]) })}\n`);
+  },
+
+  async close(argv) {
+    const force = argv.includes('--force');
+    const id = paneArg(argv.find((a) => a !== '--force'));
+    if (id === self) fail('that is this pane.');
+    console.log(`Closed ${await request('close', { id, force })}.`);
   },
 
   async read(argv) {
@@ -178,6 +199,8 @@ const commands = {
         type: String(e.notification_type ?? ''),
         message: String(e.message ?? e.last_assistant_message ?? '').replace(/\s+/g, ' ').trim().slice(0, 300),
         sessionId: String(e.session_id ?? ''),
+        // The whole final reply, for `tessera last`.
+        ...(event === 'Stop' ? { last: String(e.last_assistant_message ?? '').slice(0, 100000) } : {}),
       });
       if (event === 'UserPromptSubmit' && typeof res?.context === 'string' && res.context) {
         out = JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: res.context } });

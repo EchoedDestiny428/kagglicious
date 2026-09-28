@@ -101,11 +101,14 @@ something like:
 It uses:
 
 ```
-tessera list                      the orchestrator and agents, with state (working / idle / exited)
+tessera list                      the orchestrator and agents, with state and background work
 tessera send <pane> <text>        type text into a session and press Enter ("-" reads stdin)
-tessera wait <pane>               wait until the session has been quiet for a few seconds
+tessera send all <text>           the same, to every running agent
+tessera last <pane>               an agent's last reply in full, however long
+tessera wait <pane>...            wait until the sessions have been quiet for a few seconds
 tessera read <pane> [--lines N]   last lines of the session's screen
 tessera open [folder]             start an agent (default: this folder)
+tessera close <pane> [--force]    close an agent cleanly (--force if it is working or waiting)
 ```
 
 The command talks to the app over a named pipe (a user-only socket on macOS/Linux) with a random
@@ -114,8 +117,14 @@ out, set `claude.orchestration` to `false`.
 
 **Check-ins** (the switch in the orchestrator's header): Tessera keeps track of every task the
 orchestrator hands to an agent. It messages the orchestrator (`[tessera] Check-in: ...`) when that agent
-stops, whether it finished or is waiting for input, and every few minutes while it keeps working. The
-orchestrator then reviews the work and follows up without being asked. Check-ins are only sent while
+stops, whether it finished or is waiting for input, and every few minutes while it keeps working. A
+finished agent's check-in quotes the start of its reply; `tessera last` gives the rest. The
+orchestrator then reviews the work and follows up without being asked.
+
+**Background work**: Claude Code shows running background shells and monitors under its input box
+("1 shell"). `tessera list` and the list view repeat it ("idle, 1 shell"), so an agent that will wake up
+when its job finishes can be told from one that has stopped with nothing running. Agents also start
+without Claude Code's grey prompt suggestions, which read like sent messages on their screens. Check-ins are only sent while
 the orchestrator is idle and you are not in the middle of typing to it.
 
 **Rules** (the button in the orchestrator's header) edits `RULES.md` in the open folder. It is saved as

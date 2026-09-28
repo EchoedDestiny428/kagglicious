@@ -24,14 +24,15 @@ export function gridLayout(count, width, height, { minW = 300, minH = 200, gap =
   return { cols, rows, scroll };
 }
 
-// Short state for an agent's row in the list view.
-export function agentStateText(state, idleSeconds = 0) {
+// Short state for an agent's row in the list view. background: what
+// backgroundWork() found ("1 shell"): an idle agent with some wakes up itself.
+export function agentStateText(state, idleSeconds = 0, background = '') {
   if (state === 'working') return 'Working';
   if (state === 'needs-input') return 'Needs you';
   if (state === 'idle') {
     const min = Math.floor(idleSeconds / 60);
-    if (min < 1) return 'Idle';
-    return min < 60 ? `Idle ${min}m` : `Idle ${Math.floor(min / 60)}h`;
+    const idle = min < 1 ? 'Idle' : min < 60 ? `Idle ${min}m` : `Idle ${Math.floor(min / 60)}h`;
+    return background ? `${idle} · ${background}` : idle;
   }
   if (state === 'exited') return 'Exited';
   if (state === 'error') return 'Error';
