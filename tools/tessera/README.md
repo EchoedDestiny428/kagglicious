@@ -25,7 +25,10 @@ The shortcut runs the current source: Tessera rebuilds the page on launch if a f
   right. Click the folder name to switch to a recent folder.
 - **Open subfolder** starts an agent (a Claude session) in one subfolder. **Open all subfolders** starts
   one in each (hidden folders, folders starting with `_` and `node_modules` are skipped). Each agent
-  is a live tile.
+  is a live tile. Tiles keep a readable size; when they do not all fit, the agents area scrolls.
+- **Tiles / list** (the switch next to the folder name): the list hides the terminals and shows one row
+  per agent with what it is doing and its state (Working, Idle 4m, Needs you, Exited). Click a row to
+  zoom in, as with a tile.
 - **Click a tile** to zoom in: a file tree on the left, the agent in the middle. Rest the pointer on the
   right edge and a terminal in that folder slides in. It stays loaded while the view is open and is
   closed with it. Clicking a file in the tree adds `@path` to the agent's prompt (right-click: Open).
@@ -54,7 +57,8 @@ The shortcut runs the current source: Tessera rebuilds the page on launch if a f
   to think harder, the way Claude Code's `ultrathink` does for one prompt. The gear shows a dot while it
   is on, and it switches itself off. It adds a note to each prompt through Tessera's prompt hook; it
   does not change the effort setting, so nothing is written to Claude Code's settings.
-- Drag the sidebar's left edge to resize it. Day / night switch in the top right.
+- Drag the line between the agents and the orchestrator to resize the sidebar; double-click it to
+  reset. Day / night switch in the top right.
 
 Shortcuts (Cmd instead of Ctrl on macOS):
 

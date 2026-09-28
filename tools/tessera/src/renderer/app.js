@@ -8,7 +8,7 @@ import { JobsStrip } from './jobs-strip.js';
 import { RulesEditor } from './rules-editor.js';
 import { openSettings } from './settings.js';
 import { TerminalPane } from './terminal-pane.js';
-import { gridShape, readSaved } from './tiles.js';
+import { agentStateText, gridLayout, readSaved } from './tiles.js';
 import { ZoomView } from './zoom.js';
 
 const api = window.tessera;
@@ -72,8 +72,11 @@ const folderBtn = h('button', { class: 'folder-btn', type: 'button', onClick: ()
   icon('folder', 15), folderName, syncDot, icon('chevron', 14));
 const themeToggle = h('button', { class: 'theme-toggle', type: 'button', role: 'switch', onClick: () => toggleTheme() },
   h('span', { class: 'theme-knob' }), withClass(icon('sun', 13), 'sun'), withClass(icon('moon', 13), 'moon'));
+// Agents as terminal tiles or as a list; same knob-switch shape as the theme toggle.
+const viewToggle = h('button', { class: 'theme-toggle view-toggle', type: 'button', role: 'switch', onClick: () => setAgentView(listView() ? 'grid' : 'list') },
+  h('span', { class: 'theme-knob' }), withClass(icon('grid', 13), 'grid-icon'), withClass(icon('list', 13), 'list-icon'));
 const settingsBtn = iconButton('settings', 'Settings', (e) => showSettings(e.currentTarget), 'topbar-btn');
-els.topbar.append(folderBtn, h('div', { class: 'spacer' }), settingsBtn, themeToggle);
+els.topbar.append(folderBtn, viewToggle, h('div', { class: 'spacer' }), settingsBtn, themeToggle);
 
 // Start panel: open one subfolder, or all of them. Sits after the tiles.
 const pickBtn = h('button', { class: 'btn primary start-btn', type: 'button', onClick: (e) => subfolderPicker(e.currentTarget) },
@@ -121,7 +124,7 @@ const zoom = new ZoomView(els.main, {
 function showAgent(n) {
   const agent = state.agents[n - 1];
   if (!agent) return false;
-  if (zoom.isOpen) zoom.switchTo(agent.pane, agent.tile);
+  if (zoom.isOpen) zoom.switchTo(agent.pane, zoomOrigin(agent));
   else zoomIn(agent.pane);
   return true;
 }
@@ -149,6 +152,7 @@ function applyState(s) {
   state.ui = s.ui ?? state.ui;
   state.windowsBuild = s.windowsBuild ?? state.windowsBuild;
   if (state.ui.orchestratorWidth) els.app.style.setProperty('--side-w', `${state.ui.orchestratorWidth}px`);
+  renderView();
   const termChanged = s.terminal && JSON.stringify(s.terminal) !== JSON.stringify(state.terminal);
   if (s.terminal) state.terminal = s.terminal;
   if (s.theme && s.theme !== state.theme) setTheme(s.theme, false);
@@ -212,15 +216,49 @@ function render() {
   start.hidden = !hasFolder || unopened.length === 0;
   allBtn.hidden = unopened.length < 2;
   start.classList.toggle('alone', state.agents.length === 0);
+  renderView();
+}
+
+// ---------------------------------------------------------------------------
+// Agent view: tiles (terminals in a grid) or a list (one row per agent)
+
+const listView = () => state.ui.agentView === 'list';
+
+function setAgentView(view) {
+  state.ui = { ...state.ui, agentView: view };
+  renderView();
+  api.setPrefs({ agentView: view });
+}
+
+function renderView() {
+  const has = state.agents.length > 0;
+  viewToggle.hidden = !state.folder || !has;
+  viewToggle.setAttribute('aria-checked', String(listView()));
+  viewToggle.title = listView() ? 'Show as tiles' : 'Show as list';
+  els.agents.classList.toggle('list', listView() && has);
+  renderRows();
   layoutGrid();
 }
 
+// Each row's state text (the dot, title and needs-you ring follow the pane by themselves).
+function renderRows() {
+  if (!listView()) return;
+  for (const { pane, rowState } of state.agents) rowState.textContent = agentStateText(pane.controlState, pane.idleSeconds);
+}
+
+// Where the zoomed view grows from: the agent's tile, or its row in the list.
+const zoomOrigin = (agent) => (listView() ? agent.row : agent.tile);
+
+// Tiles have a minimum size; when they do not all fit, the grid scrolls.
+const MIN_TILE = { minW: 300, minH: 200, gap: 8 };
+
 function layoutGrid() {
+  if (els.agents.classList.contains('list')) return;
   const count = state.agents.length + (start.hidden ? 0 : 1);
-  const box = els.agents.getBoundingClientRect();
-  const { cols, rows } = gridShape(count, box.width / Math.max(1, box.height));
+  const { cols, rows, scroll } = gridLayout(count, els.agents.clientWidth, els.agents.clientHeight, MIN_TILE);
   els.agents.style.setProperty('--cols', cols);
   els.agents.style.setProperty('--rows', rows);
+  els.agents.style.setProperty('--row-h', scroll ? `${MIN_TILE.minH}px` : 'minmax(0, 1fr)');
 }
 
 // ---------------------------------------------------------------------------
@@ -414,8 +452,28 @@ function openAgent(cwd, { mode = 'new', sessionId = null, save = true } = {}) {
   tile.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && e.target === tile) zoomIn(pane);
   });
+  // Its row in the list view.
+  const rowTitle = h('span', { class: 'row-title' });
+  const rowState = h('span', { class: 'row-state' });
+  const row = h('div', { class: 'agent-row', tabindex: 0, role: 'button' },
+    h('span', { class: 'dot' }),
+    h('span', { class: 'row-name', text: pane.label, title: cwd }),
+    rowTitle,
+    rowState,
+    iconButton('x', 'Close', (e) => {
+      e.stopPropagation();
+      closeAgent(pane);
+    }, 'tile-close'));
+  pane.bindHeader({ root: row, title: rowTitle });
+  row.addEventListener('click', (e) => {
+    if (!e.target.closest('button')) zoomIn(pane);
+  });
+  row.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target === row) zoomIn(pane);
+  });
   els.agents.insertBefore(tile, start);
-  state.agents.push({ pane, tile, slot });
+  els.agents.insertBefore(row, start);
+  state.agents.push({ pane, tile, slot, row, rowState });
   render();
   pane.mount(slot);
   queueStart(pane);
@@ -455,6 +513,7 @@ async function closeAgent(pane) {
   const [agent] = state.agents.splice(i, 1);
   pane.dispose();
   agent.tile.remove();
+  agent.row.remove();
   render();
   saveSoon();
 }
@@ -464,16 +523,17 @@ function zoomIn(pane) {
   if (!agent || zoom.isOpen) return;
   document.querySelector('.picker')?.remove();
   els.main.classList.add('zoomed');
-  zoom.open(pane, agent.tile);
+  zoom.open(pane, zoomOrigin(agent));
 }
 
 // End everything without touching the folder's saved state.
 async function closeAll() {
   await rulesEditor.close();
   if (zoom.isOpen) await zoom.close({ animate: false });
-  for (const { pane, tile } of state.agents) {
+  for (const { pane, tile, row } of state.agents) {
     pane.dispose();
     tile.remove();
+    row.remove();
   }
   state.agents = [];
   state.orchestrator?.dispose();
@@ -549,7 +609,15 @@ function changeFontSize(step) {
   api.setPrefs({ fontSize: next });
 }
 
+const DEFAULT_SIDE_W = 460;
+
 function setupSidebarResize() {
+  resizer.title = 'Drag to resize, double-click to reset';
+  resizer.addEventListener('dblclick', () => {
+    els.app.style.setProperty('--side-w', `${DEFAULT_SIDE_W}px`);
+    state.ui.orchestratorWidth = DEFAULT_SIDE_W;
+    api.setPrefs({ orchestratorWidth: DEFAULT_SIDE_W });
+  });
   resizer.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -715,6 +783,7 @@ setInterval(() => {
   tickCheckIns();
   tickRules();
   tickAgentSettings();
+  renderRows();
 }, 2000);
 
 // ---------------------------------------------------------------------------

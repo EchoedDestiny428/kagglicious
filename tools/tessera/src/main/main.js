@@ -494,6 +494,7 @@ function registerIpc() {
       if ('confirmClose' in patch) c.ui.confirmClose = patch.confirmClose;
       if ('notifications' in patch) c.ui.notifications = patch.notifications;
       if ('orchestratorWidth' in patch) c.ui.orchestratorWidth = patch.orchestratorWidth;
+      if ('agentView' in patch) c.ui.agentView = patch.agentView;
       if ('fontSize' in patch) c.terminal.fontSize = patch.fontSize;
       for (const k of ['permissionMode', 'remoteControl']) if (k in patch) c.claude[k] = patch[k];
       // { agent: { model?, effort? } }

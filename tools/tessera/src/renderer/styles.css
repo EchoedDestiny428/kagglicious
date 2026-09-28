@@ -278,8 +278,15 @@ button {
 }
 
 .theme-toggle[aria-checked='false'] .sun,
-.theme-toggle[aria-checked='true'] .moon {
+.theme-toggle[aria-checked='true'] .moon,
+.view-toggle[aria-checked='false'] .grid-icon,
+.view-toggle[aria-checked='true'] .list-icon {
   color: var(--invert-text);
+}
+
+/* Tiles / list switch, next to the folder name. */
+.view-toggle {
+  margin-left: 4px;
 }
 
 /* -------------------------------------------------------------- workspace */
@@ -303,15 +310,107 @@ button {
   display: none !important;
 }
 
-/* The grid of agents. The start panel (open subfolder / all) is its last cell. */
+/* The grid of agents. The start panel (open subfolder / all) is its last cell.
+   Rows have a fixed height (--row-h) once the tiles no longer fit; then it
+   scrolls. The 3px of padding (cancelled by the inset) leave room for a
+   hovered tile's lift and shadow. */
 #agents {
   position: absolute;
-  inset: 0;
+  inset: -3px;
+  padding: 3px;
   display: grid;
   grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
-  grid-template-rows: repeat(var(--rows, 1), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--rows, 1), var(--row-h, minmax(0, 1fr)));
   gap: 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
   transition: filter 0.28s var(--ease);
+}
+
+/* List view: one row per agent, terminals hidden. */
+#agents.list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#agents.list .tile,
+#agents:not(.list) .agent-row {
+  display: none;
+}
+
+.agent-row {
+  height: 46px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 8px 0 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 0.18s var(--ease), background 0.18s var(--ease);
+  animation: pop 0.2s var(--ease);
+}
+
+.agent-row:hover,
+.agent-row:focus-visible {
+  outline: none;
+  border-color: var(--border-strong);
+  background: var(--hover);
+}
+
+.agent-row.needs-you {
+  border-color: var(--text);
+  animation: needs-you 1.8s ease-in-out infinite;
+}
+
+.row-name {
+  flex: none;
+  width: min(200px, 28%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+
+.agent-row.needs-you .row-title {
+  color: var(--text);
+  font-weight: 550;
+}
+
+.row-state {
+  flex: none;
+  min-width: 76px;
+  color: var(--text-2);
+  font: 500 11.5px var(--font-mono);
+  text-align: right;
+}
+
+.agent-row:hover .tile-close,
+.agent-row:focus-within .tile-close {
+  color: var(--text-2);
+}
+
+#agents.list .start {
+  flex: none;
+  flex-direction: row;
+  justify-content: flex-start;
+  padding: 8px;
+  border-radius: var(--radius);
 }
 
 .start {
@@ -840,10 +939,14 @@ button {
 
 /* ----------------------------------------------------------- orchestrator */
 
+/* --split: the gap between the agents and the orchestrator, which holds the
+   divider line (the workspace already puts 8px between them). */
 #orchestrator {
+  --split: 22px;
   position: relative;
   width: var(--side-w, 460px);
   max-width: calc(100vw - 380px);
+  margin-left: calc(var(--split) - 8px);
   flex: none;
   display: flex;
 }
@@ -859,13 +962,25 @@ button {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 2px solid var(--focus-border);
   border-radius: var(--radius-lg);
   background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+/* The orchestrator stands out from the agents: a thicker, lighter outline, a
+   shadow, and a tinted header with a larger name. */
+.side-head {
+  background: var(--hover);
 }
 
 .side-head .icon {
-  color: var(--text-2);
+  color: var(--text);
+}
+
+.side-name {
+  font-size: 13.5px;
+  font-weight: 600;
 }
 
 /* Rules button in the orchestrator header */
@@ -949,10 +1064,49 @@ button {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: -8px;
-  width: 8px;
+  left: calc(-1 * var(--split));
+  width: var(--split);
   z-index: 3;
   cursor: col-resize;
+}
+
+/* The line between the agents and the orchestrator: faint, with a grip in the
+   middle; it darkens while hovered or dragged. */
+.side-resizer::before,
+.side-resizer::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  transition: background 0.15s var(--ease), width 0.15s var(--ease);
+}
+
+.side-resizer::before {
+  top: 14px;
+  bottom: 14px;
+  width: 1px;
+  background: var(--border);
+}
+
+.side-resizer::after {
+  top: 50%;
+  height: 36px;
+  width: 3px;
+  margin-top: -18px;
+  background: var(--border-strong);
+}
+
+.side-resizer:hover::before,
+body.resizing .side-resizer::before {
+  width: 2px;
+  background: var(--text-3);
+}
+
+.side-resizer:hover::after,
+body.resizing .side-resizer::after {
+  width: 4px;
+  background: var(--text-2);
 }
 
 body.resizing,

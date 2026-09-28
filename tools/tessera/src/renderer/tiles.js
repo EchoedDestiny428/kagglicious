@@ -11,6 +11,33 @@ export function gridShape(count, aspect) {
   return { cols, rows: Math.ceil(count / cols) };
 }
 
+// The grid for `count` tiles in a width x height box. Tiles never get smaller
+// than minW x minH: columns are capped by the width, and when the rows do not
+// fit the height they get a fixed height and the box scrolls.
+export function gridLayout(count, width, height, { minW = 300, minH = 200, gap = 8 } = {}) {
+  const w = Math.max(1, width);
+  const h = Math.max(1, height);
+  const most = Math.max(1, Math.floor((w + gap) / (minW + gap)));
+  const cols = Math.min(gridShape(count, w / h).cols, most);
+  const rows = Math.max(1, Math.ceil(count / cols));
+  const scroll = (h - gap * (rows - 1)) / rows < minH;
+  return { cols, rows, scroll };
+}
+
+// Short state for an agent's row in the list view.
+export function agentStateText(state, idleSeconds = 0) {
+  if (state === 'working') return 'Working';
+  if (state === 'needs-input') return 'Needs you';
+  if (state === 'idle') {
+    const min = Math.floor(idleSeconds / 60);
+    if (min < 1) return 'Idle';
+    return min < 60 ? `Idle ${min}m` : `Idle ${Math.floor(min / 60)}h`;
+  }
+  if (state === 'exited') return 'Exited';
+  if (state === 'error') return 'Error';
+  return 'Starting';
+}
+
 // A folder's saved state, from whatever the config file holds:
 //   { orchestrator: sessionId | null, agents: [{ cwd, sessionId }] }
 //   rulesSeen: { sessionId: hash of the rules that conversation last got }

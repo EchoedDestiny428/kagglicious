@@ -127,12 +127,12 @@ export class ZoomView {
     this.onRelease(c.pane);
   }
 
-  // Grow from the tile (or shrink back into it): a FLIP transform on the card
-  // while the blurred backdrop fades.
+  // Grow from the tile or list row (or shrink back into it): a FLIP transform
+  // on the card while the blurred backdrop fades.
   async animate(opening) {
     const { card, tile } = this.cur;
-    const duration = reducedMotion() || !tile.isConnected ? 0 : DURATION;
     const from = tile.getBoundingClientRect();
+    const duration = reducedMotion() || !tile.isConnected || !from.width || !from.height ? 0 : DURATION;
     const to = card.getBoundingClientRect();
     const start = {
       transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})`,
