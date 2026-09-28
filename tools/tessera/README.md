@@ -24,8 +24,12 @@ The shortcut runs the current source: Tessera rebuilds the page on launch if a f
 - **Open folder**. The orchestrator, a Claude session in the folder itself, opens in the sidebar on the
   right. Click the folder name to switch to a recent folder.
 - **Open subfolder** starts an agent (a Claude session) in one subfolder. **Open all subfolders** starts
-  one in each (hidden folders, folders starting with `_` and `node_modules` are skipped). Each agent
-  is a live tile. Tiles keep a readable size; when they do not all fit, the agents area scrolls.
+  one in each (hidden folders, folders starting with `_` and `node_modules` are skipped). These two
+  show while no agent is open. Each agent is a live tile. Tiles keep a readable size; when they do not
+  all fit, the agents area scrolls.
+- **+** (left edge) adds a subagent: pick a subfolder that has no agent yet, or **New subfolder…** to
+  name a new one. A new subfolder starts as a copy of the folder's `_template/` if it has one (as
+  kaggle-lab does), and an agent starts in it.
 - **Tiles / list** (the switch next to the folder name): the list hides the terminals and shows one row
   per agent with what it is doing and its state (Working, Idle 4m, Needs you, Exited). Click a row to
   zoom in, as with a tile.

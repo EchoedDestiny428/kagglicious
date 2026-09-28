@@ -45,6 +45,42 @@ export function listDir(dir) {
   return { entries: out.slice(0, MAX_ENTRIES), truncated: out.length > MAX_ENTRIES };
 }
 
+// Why `name` cannot be the name of a new subfolder, or null if it can.
+export function folderNameError(name) {
+  const n = String(name ?? '').trim();
+  if (!n) return 'Type a name.';
+  if (n.length > 100) return 'That name is too long.';
+  if (/[<>:"/\\|?*\x00-\x1f]/.test(n)) return 'A name cannot contain < > : " / \\ | ? *';
+  if (/[. ]$/.test(n)) return 'A name cannot end with a dot or a space.';
+  if (/^(con|prn|aux|nul|com\d|lpt\d)(\..*)?$/i.test(n)) return `"${n}" is a reserved name on Windows.`;
+  return null;
+}
+
+// Folder copied into every new subfolder, if the parent has one (kaggle-lab's
+// competition template).
+export const TEMPLATE_DIR = '_template';
+
+// Create subfolder `name` of `parent`, as a copy of parent/_template when that
+// exists. Returns its path; throws with a message fit for the user.
+export function createSubfolder(parent, name) {
+  const problem = folderNameError(name);
+  if (problem) throw new Error(problem);
+  const clean = String(name).trim();
+  const dest = path.join(parent, clean);
+  if (fs.existsSync(dest)) throw new Error(`${clean} already exists.`);
+  const template = path.join(parent, TEMPLATE_DIR);
+  try {
+    if (fs.statSync(template, { throwIfNoEntry: false })?.isDirectory()) {
+      fs.cpSync(template, dest, { recursive: true, errorOnExist: true, force: false });
+    } else {
+      fs.mkdirSync(dest);
+    }
+  } catch (err) {
+    throw new Error(`Could not create ${clean}: ${err.code || err.message}`);
+  }
+  return dest;
+}
+
 // True if `child` is `parent` or somewhere below it.
 export function isInside(child, parent, platform = process.platform) {
   const p = platform === 'win32' ? path.win32 : path.posix;

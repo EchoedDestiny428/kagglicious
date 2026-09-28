@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { isInside, listDir } from '../src/main/folders.js';
+import { createSubfolder, folderNameError, isInside, listDir, listSubfolders } from '../src/main/folders.js';
 import { agentStateText, gridLayout, gridShape, readSaved } from '../src/renderer/tiles.js';
 
 test('file tree listing: folders first, natural order, .git hidden', () => {
@@ -78,4 +78,32 @@ test('agentStateText is short and says how long an agent has been idle', () => {
   assert.equal(agentStateText('idle', 3 * 3600), 'Idle 3h');
   assert.equal(agentStateText('exited'), 'Exited');
   assert.equal(agentStateText('starting'), 'Starting');
+});
+
+test('new subfolder names are checked before anything is created', () => {
+  assert.equal(folderNameError('kaggriculture'), null);
+  assert.equal(folderNameError('  spaced name  '), null, 'surrounding spaces are trimmed');
+  assert.match(folderNameError(''), /Type a name/);
+  assert.match(folderNameError('   '), /Type a name/);
+  for (const bad of ['a/b', 'a\b', '..', 'x:y', 'what?', 'tab\there']) assert.ok(folderNameError(bad), bad);
+  assert.match(folderNameError('name.'), /end with a dot/);
+  assert.match(folderNameError('CON'), /reserved/);
+  assert.match(folderNameError('lpt1.txt'), /reserved/);
+  assert.match(folderNameError('x'.repeat(101)), /too long/);
+});
+
+test('a new subfolder starts as a copy of _template when there is one', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tessera-new-'));
+  const plain = createSubfolder(root, 'plain');
+  assert.deepEqual(fs.readdirSync(plain), [], 'no template: an empty folder');
+  fs.mkdirSync(path.join(root, '_template', 'submissions'), { recursive: true });
+  fs.writeFileSync(path.join(root, '_template', 'WORKLOG.md'), '# Worklog\n');
+  fs.writeFileSync(path.join(root, '_template', 'submissions', 'README.md'), '| id |\n');
+  const comp = createSubfolder(root, ' new-comp ');
+  assert.equal(path.basename(comp), 'new-comp');
+  assert.equal(fs.readFileSync(path.join(comp, 'WORKLOG.md'), 'utf8'), '# Worklog\n');
+  assert.ok(fs.existsSync(path.join(comp, 'submissions', 'README.md')));
+  assert.throws(() => createSubfolder(root, 'new-comp'), /already exists/);
+  assert.throws(() => createSubfolder(root, '../escape'), /cannot contain/);
+  assert.deepEqual(listSubfolders(root).map((d) => path.basename(d)), ['new-comp', 'plain'], '_template itself is not an agent folder');
 });

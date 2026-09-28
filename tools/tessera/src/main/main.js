@@ -7,7 +7,7 @@ import path from 'node:path';
 import { ConfigStore, folderKey } from './config.js';
 import { ControlServer } from './control.js';
 import { APP_ID, createShortcut, getStartAtLogin, rebuildIfStale, setStartAtLogin } from './desktop.js';
-import { isInside, listDir, listSubfolders } from './folders.js';
+import { createSubfolder, isInside, listDir, listSubfolders } from './folders.js';
 import { syncRoot, syncStatus, unsynced } from './gitsync.js';
 import { MAX_RULES, promptText, readRules, RULES_FILE, TEMPLATE, writeRules } from './rules.js';
 import { jobsConfigured, JobsPoller } from './jobs.js';
@@ -442,6 +442,17 @@ function registerIpc() {
       return { folders: listSubfolders(folder) };
     } catch (err) {
       return { error: `Could not read ${path.basename(folder)}: ${err.code || err.message}` };
+    }
+  });
+  // A new subfolder of the open folder (for "Add subagent").
+  handle('folder:create', (name) => {
+    const folder = store.config.folder;
+    if (!folder || !isDir(folder)) return { error: 'No folder is open.' };
+    if (typeof name !== 'string') return { error: 'Type a name.' };
+    try {
+      return { folder: createSubfolder(folder, name) };
+    } catch (err) {
+      return { error: err.message };
     }
   });
   handle('folder:recent', () => publicState().recent);

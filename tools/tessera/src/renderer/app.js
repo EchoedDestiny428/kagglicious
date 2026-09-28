@@ -61,6 +61,7 @@ const els = {
   topbar: document.getElementById('topbar'),
   main: document.getElementById('main'),
   agents: document.getElementById('agents'),
+  rail: document.getElementById('rail'),
   side: document.getElementById('orchestrator'),
   jobs: document.getElementById('jobs'),
   toasts: document.getElementById('toasts'),
@@ -84,6 +85,11 @@ const pickBtn = h('button', { class: 'btn primary start-btn', type: 'button', on
 const allBtn = h('button', { class: 'btn start-btn', type: 'button', onClick: () => openAllSubfolders() },
   icon('folders', 15), h('span', { text: 'Open all subfolders' }));
 const start = h('div', { class: 'start' }, pickBtn, allBtn);
+
+// Left rail: add a subagent (pick a subfolder, or create one).
+const addBtn = h('button', { class: 'add-agent', type: 'button', title: 'Add subagent', 'aria-label': 'Add subagent', onClick: (e) => subfolderPicker(e.currentTarget, { side: 'right' }) },
+  icon('plus', 18));
+els.rail.append(addBtn);
 const noFolder = h('button', { class: 'btn primary start-btn', type: 'button', onClick: () => folderMenu() }, icon('folder', 15), 'Open folder');
 els.agents.append(start);
 els.main.append(noFolder);
@@ -212,9 +218,10 @@ function render() {
   noFolder.hidden = hasFolder;
   els.agents.hidden = !hasFolder;
   els.side.hidden = !hasFolder;
-  const unopened = unopenedSubfolders();
-  start.hidden = !hasFolder || unopened.length === 0;
-  allBtn.hidden = unopened.length < 2;
+  els.rail.hidden = !hasFolder;
+  // The start panel only while no agent is open; after that, the + in the rail.
+  start.hidden = !hasFolder || state.agents.length > 0;
+  allBtn.hidden = unopenedSubfolders().length < 2;
   start.classList.toggle('alone', state.agents.length === 0);
   renderView();
 }
@@ -344,12 +351,16 @@ function unopenedSubfolders() {
 }
 
 // A small list of subfolders under the button.
-function subfolderPicker(anchor) {
-  document.querySelector('.picker')?.remove();
+// Subfolders without an agent, then "New subfolder…", which asks for a name.
+//   side: 'below' the anchor (start panel) or to its 'right' (the + in the rail)
+function subfolderPicker(anchor, { side = 'below' } = {}) {
+  const existing = document.querySelector('.picker');
+  existing?.close();
+  if (existing?.anchor === anchor) return; // a second click closes it
   const options = unopenedSubfolders();
-  if (!options.length) return;
   const close = () => {
     picker.remove();
+    anchor.classList.remove('open');
     document.removeEventListener('pointerdown', outside, true);
     document.removeEventListener('keydown', onKey, true);
   };
@@ -362,20 +373,51 @@ function subfolderPicker(anchor) {
       close();
     }
   };
+  // The name form that replaces the list.
+  const askName = () => {
+    const input = h('input', { class: 'picker-input', type: 'text', placeholder: 'Folder name', spellcheck: 'false', maxlength: '100' });
+    const error = h('div', { class: 'picker-error', hidden: true });
+    const create = async () => {
+      const res = await api.folder.create(input.value);
+      if (!res || res.error) {
+        error.textContent = res?.error ?? 'Could not create the folder.';
+        error.hidden = false;
+        input.focus();
+        return;
+      }
+      close();
+      openAgent(res.folder);
+      refreshSubfolders();
+    };
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        create();
+      }
+    });
+    input.addEventListener('input', () => {
+      error.hidden = true;
+    });
+    picker.replaceChildren(input, error);
+    input.focus();
+  };
+  const item = (iconName, label, onClick) =>
+    h('button', { class: 'picker-item', type: 'button', role: 'menuitem', onClick }, icon(iconName, 14), h('span', { text: label }));
   const picker = h('div', { class: 'picker', role: 'menu' },
-    ...options.map((dir) => h('button', {
-      class: 'picker-item',
-      type: 'button',
-      role: 'menuitem',
-      onClick: () => {
-        close();
-        openAgent(dir);
-      },
-    }, icon('folder', 14), h('span', { text: labelFor(dir) }))));
+    ...options.map((dir) => item('folder', labelFor(dir), () => {
+      close();
+      openAgent(dir);
+    })),
+    options.length ? h('div', { class: 'picker-sep' }) : null,
+    item('plus', 'New subfolder…', askName));
+  picker.anchor = anchor;
+  picker.close = close;
   const a = anchor.getBoundingClientRect();
-  const m = els.main.getBoundingClientRect();
-  Object.assign(picker.style, { left: `${a.left - m.left}px`, top: `${a.bottom - m.top + 6}px`, minWidth: `${a.width}px` });
-  els.main.append(picker);
+  Object.assign(picker.style, side === 'right'
+    ? { left: `${a.right + 8}px`, top: `${a.top}px` }
+    : { left: `${a.left}px`, top: `${a.bottom + 6}px`, minWidth: `${a.width}px` });
+  document.body.append(picker);
+  anchor.classList.add('open');
   picker.querySelector('button')?.focus();
   document.addEventListener('pointerdown', outside, true);
   document.addEventListener('keydown', onKey, true);
@@ -521,7 +563,7 @@ async function closeAgent(pane) {
 function zoomIn(pane) {
   const agent = state.agents.find((a) => a.pane === pane);
   if (!agent || zoom.isOpen) return;
-  document.querySelector('.picker')?.remove();
+  document.querySelector('.picker')?.close();
   els.main.classList.add('zoomed');
   zoom.open(pane, zoomOrigin(agent));
 }

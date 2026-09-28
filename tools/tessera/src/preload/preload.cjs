@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('tessera', {
     pick: () => ipcRenderer.invoke('folder:pick'),
     open: (folder) => ipcRenderer.invoke('folder:open', folder),
     subfolders: (folder) => ipcRenderer.invoke('folder:subfolders', folder),
+    create: (name) => ipcRenderer.invoke('folder:create', name),
     recent: () => ipcRenderer.invoke('folder:recent'),
   },
   saveSession: (folder, tree) => ipcRenderer.send('session:save', folder, tree),
