@@ -5,7 +5,8 @@ How the work is organised, committed and synced: [CONVENTIONS.md](CONVENTIONS.md
 
 ## Competitions
 
-- [Kaggriculture](kaggriculture/) - two-farm market simulation, agent "crimson" (best Elo 2814 so far)
+- [Kaggriculture](kaggriculture/) - two-farm market simulation, agent "crimson" (best rank 296; rank 632 of
+  10,246 at the deadline). Code, tools and findings published after the competition.
 
 ## Tools
 

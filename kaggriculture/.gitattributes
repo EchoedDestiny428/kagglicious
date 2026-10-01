@@ -1,0 +1,3 @@
+# Agents and public bases must stay byte-identical to what was submitted (SHA256SUMS) and to what the build patches match.
+src/** -text
+submissions/** -text

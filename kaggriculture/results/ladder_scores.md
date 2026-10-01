@@ -1,6 +1,7 @@
 # Ladder scores
 
-Kaggle public ladder (Elo; new submissions start at 600). Snapshot 2026-09-20.
+Kaggle public ladder (Elo; new submissions start at 600). The table below is the snapshot from 2026-09-20; every later
+submission, with its id, hash and ladder score, is in [../submissions/README.md](../submissions/README.md).
 
 | Submission | File | Submitted (UTC) | Description | Peak Elo | Elo now |
 |---|---|---|---|---|---|
@@ -32,3 +33,16 @@ submission and its Elo after the game.
 | v2.1 + lookahead 24 | 65 |
 | v2.1 + lookahead 28 | 63 |
 | crimson_v3 | 72 |
+
+## Standing over the last week
+
+| Date (UTC) | Our best agent | Rank | Silver line (top 5%) |
+|---|---|---|---|
+| 2026-09-24 | crimson v5.12, 2598.6 | 296 of ~9,930 | ~2470 |
+| 2026-09-26 | crimson v10, 2464 | 387 of 10,026 (silver) | 2413 |
+| 2026-09-27 | crimson v10.1, 2276 | 668 | 2349 |
+| 2026-09-29 | crimson v11.1, 2250 | 488 (silver) | 2239 |
+| 2026-09-30 23:59 (deadline) | crimson v11.6, 1982 | 632 of 10,246 | 2048 |
+
+`ladder_history.log` now runs from 2026-09-13 to the deadline: one line per finished ladder game with the submission
+and its Elo after the game.
